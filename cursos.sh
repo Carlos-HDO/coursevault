@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Atalho para iniciar o CourseVault. Pode ser chamado por um link simbólico
 # (ex.: ln -s /caminho/coursevault/cursos.sh ~/.local/bin/cursos).
+# Usa a .venv do projeto; sem ela, o comando "coursevault" instalado com pipx.
 set -e
 
-PROJECT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 VENV_PY="$PROJECT_DIR/.venv/bin/python"
 SERVER_PY="$PROJECT_DIR/server.py"
 DEFAULT_ROOT="${COURSEVAULT_ROOT:-/media/cd/DIC_ntfs_4TB/Cursos}"
 
 if [[ "${LANG:-}" == pt* ]]; then
-    MSG_NO_VENV="❌ Erro: ambiente virtual não encontrado em"
+    MSG_NO_VENV="❌ Erro: crie a .venv do projeto ou instale com \"pipx install $PROJECT_DIR\". Ambiente não encontrado em"
     MSG_NO_DIR="❌ Erro: a pasta informada não existe"
     MSG_START="📚 Iniciando o CourseVault em"
     MSG_USAGE="📚 Uso: cursos [pasta] [opções do server.py]"
@@ -19,7 +21,7 @@ if [[ "${LANG:-}" == pt* ]]; then
     MSG_PORT="# Outra porta"
     MSG_ENV="Defina COURSEVAULT_ROOT para mudar a pasta padrão."
 else
-    MSG_NO_VENV="❌ Error: virtual environment not found at"
+    MSG_NO_VENV="❌ Error: create the project's .venv or install with \"pipx install $PROJECT_DIR\". Environment not found at"
     MSG_NO_DIR="❌ Error: folder does not exist"
     MSG_START="📚 Starting CourseVault at"
     MSG_USAGE="📚 Usage: cursos [folder] [server.py options]"
@@ -30,7 +32,12 @@ else
     MSG_ENV="Set COURSEVAULT_ROOT to change the default folder."
 fi
 
-if [ ! -f "$VENV_PY" ]; then
+INSTALLED="$(command -v coursevault 2>/dev/null || true)"
+if [ -x "$VENV_PY" ]; then
+    RUN=("$VENV_PY" "$SERVER_PY")
+elif [ -n "$INSTALLED" ] && [ "$(readlink -f "$INSTALLED")" != "$SELF" ]; then
+    RUN=("$INSTALLED")
+else
     echo "$MSG_NO_VENV: $VENV_PY" >&2
     exit 1
 fi
@@ -51,7 +58,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "$MSG_ENV"
             echo ""
-            "$VENV_PY" "$SERVER_PY" --help
+            "${RUN[@]}" --help
             exit 0
             ;;
         -r|--root)
@@ -97,4 +104,4 @@ else
 fi
 
 echo "$MSG_START: $TARGET_ROOT"
-exec "$VENV_PY" "$SERVER_PY" --root "$TARGET_ROOT" --follow-symlinks "${EXTRA_ARGS[@]}"
+exec "${RUN[@]}" --root "$TARGET_ROOT" --follow-symlinks "${EXTRA_ARGS[@]}"

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coursevault"
+version = "1.0.0"
+description = "A local portal to browse, watch and organize your course folders (FastAPI + HTML, EN/PT)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Carlos-HDO" }]
+dependencies = [
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.29,<1",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Framework :: FastAPI",
+    "Environment :: Web Environment",
+    "Operating System :: OS Independent",
+    "Topic :: Education",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.urls]
+Homepage = "https://github.com/Carlos-HDO/coursevault"
+
+[project.scripts]
+coursevault = "coursevault.server:main"
+
+# O projeto continua plano (server.py + index.html na raiz, rodando com "python server.py");
+# no pacote instalado eles viram coursevault/server.py e coursevault/index.html.
+[tool.setuptools]
+packages = ["coursevault"]
+package-dir = { coursevault = "." }
+
+[tool.setuptools.package-data]
+coursevault = ["index.html"]

@@ -14,12 +14,19 @@ de idioma no canto superior direito.
 
 ## Instalação
 
-Requer Python 3.9+.
+Requer Python 3.11+. O `ffmpeg` é opcional: com ele, as aulas mostram duração e miniatura.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt    # = pip install fastapi uvicorn
+pip install -r requirements.txt    # versões fixas e testadas de fastapi + uvicorn
+```
+
+Ou instale como comando com o [pipx](https://pipx.pypa.io/), sem `.venv` para cuidar:
+
+```bash
+pipx install .                     # a partir da pasta do projeto
+coursevault --root ~/Cursos        # mesmas opções do server.py
 ```
 
 ## Como iniciar
@@ -45,12 +52,15 @@ O navegador abre em `http://localhost:8000`.
 | `--allow-host NOME` | Com `--host 0.0.0.0`: nome extra aceito no header `Host` (repetível). IPs e o nome da própria máquina sempre funcionam |
 | `--ttl 30` | Segundos de cache do índice de busca e das contagens recursivas |
 | `--read-only` | Desativa toda a edição (capa, criar, renomear, mover e excluir) |
+| `--password` | Exige senha para abrir a biblioteca (pedida no terminal, ou lida de `$COURSEVAULT_PASSWORD`). Pensada para `--host 0.0.0.0` |
+| `--no-ffmpeg` | Não usa `ffprobe`/`ffmpeg` (duração e miniaturas das aulas) |
 
 Se o `server.py` ficar dentro da própria pasta de cursos, os arquivos do app ficam ocultos no hub.
 
 ### Atalho `cursos.sh`
 
-O `cursos.sh` inicia o servidor com a `.venv` do projeto, `--follow-symlinks` e uma pasta padrão.
+O `cursos.sh` inicia o servidor com a `.venv` do projeto (ou, sem ela, o comando `coursevault`
+instalado com o pipx), `--follow-symlinks` e uma pasta padrão.
 Crie um link num diretório do seu `PATH`:
 
 ```bash
@@ -92,12 +102,13 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 - **Dashboard:** seção de favoritos, grid de cards (capa, título, contagem de aulas/materiais/pastas, tags, status), filtro por tags (mais de uma tag combina com E), e um atalho "Continuar assistindo".
 - **Navegação:** breadcrumbs, pills para pastas irmãs, módulos (subpastas) com progresso. As URLs ficam no hash (`#/Curso/Modulo?play=aula.mp4`), então voltar, avançar e favoritos funcionam.
 - **Vídeos** (`.mp4 .mkv .webm .mov .m4v`) e áudios: lista com título limpo (`03 - Kerberoasting_avancado.mp4` vira **03** Kerberoasting avancado). O player só é criado quando você clica (um vídeo por vez) e traz PiP, tela cheia, velocidade, anterior/próxima, autoplay da próxima e retomada de onde parou. A aula é marcada como assistida aos 90%. Legendas `.srt`/`.vtt` com o mesmo nome (`aula.pt-BR.srt`) são carregadas automaticamente.
+- **Duração e miniaturas** (precisa do `ffmpeg`): cada aula mostra a duração e um quadro do vídeo, que também vira a capa do player. O cabeçalho da pasta e os módulos mostram o total quando todos os vídeos já foram medidos; os cards da página inicial mostram depois que você abre o curso uma vez. O resultado fica em cache em `~/.cache/coursevault`, fora da biblioteca, então cada vídeo é lido uma vez só (de novo apenas se mudar). Pastas grandes são medidas em lotes de 200 vídeos enquanto a página está aberta.
 - **Materiais:** PDF no visualizador do navegador; código (`.asm .py .sh .c .ps1 …`) com syntax highlighting e numeração de linhas; Markdown renderizado (com imagens relativas); botões de copiar, abrir em nova aba e baixar.
 - **Busca** (`/` ou `Ctrl+K`): ignora acentos e maiúsculas e procura em pastas, aulas, arquivos e tags. Dá para restringir à pasta atual. `Enter` abre o primeiro resultado e as setas navegam.
 - **Favoritos:** a estrela nos cards, nos módulos e no cabeçalho da pasta favorita qualquer pasta. As favoritas (e as com `pinned = true`) aparecem primeiro na raiz, nos módulos e nas pills de pastas irmãs.
 - **Editar capa:** o botão "Editar capa" no cabeçalho de uma pasta permite enviar uma imagem (escolher, arrastar ou colar com Ctrl+V), usar uma URL, remover a capa e ajustar o enquadramento vertical. A imagem é salva como `banner.<ext>` na pasta e o `course.conf` é atualizado. A capa anterior não é apagada: vira `.<nome>.bak`, oculto no hub.
 - **Organizar pastas e arquivos:** cada pasta, aula e arquivo tem um menu ⋯ com **Renomear**, **Mover para…** e **Excluir**. "Nova pasta" e "Selecionar" ficam no topo da raiz e no cabeçalho de cada pasta. No modo seleção, clique nos itens e use a barra de baixo para mover ou excluir vários de uma vez. "Mover para…" abre um navegador de pastas, com busca em toda a biblioteca e opção de criar a pasta de destino ali mesmo. Legendas com o mesmo nome do vídeo acompanham o vídeo ao renomear, mover e excluir. O progresso, os favoritos e o "Continuar assistindo" seguem os itens para o novo caminho. Nada é sobrescrito: se já existir um item com o mesmo nome no destino, a operação para.
-- **Lixeira:** "Excluir" não apaga nada. O item vai para `.lixeira/<data_hora>/<caminho original>` na raiz dos cursos (oculta no hub). Para restaurar, mova o item de volta pelo gerenciador de arquivos; para liberar espaço de vez, apague a pasta `.lixeira`.
+- **Lixeira:** "Excluir" não apaga nada. O item vai para `.lixeira/<data_hora>/<caminho original>` na raiz dos cursos (oculta no hub). O botão **Lixeira** no topo da página inicial lista o que está lá, por data: **Restaurar** devolve o item ao caminho original (recriando as pastas, se preciso, e com as legendas) e **Excluir de vez** libera o espaço (dois cliques para confirmar). **Esvaziar lixeira** apaga tudo.
 - **Progresso e favoritos:** ficam salvos no `localStorage` do navegador. O app só mexe nas suas pastas quando você pede: editar a capa (`banner.*` e `course.conf`) ou criar, renomear, mover e excluir itens.
 
 ## Segurança
@@ -105,7 +116,8 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 - Escuta só em `127.0.0.1` por padrão e rejeita `Host` desconhecido (proteção contra DNS rebinding). No modo LAN (`--host 0.0.0.0`) a checagem continua: aceita IPs e o nome da própria máquina (`hostname`, `hostname.local`); outros nomes, com `--allow-host`.
 - Bloqueia `../`, caminhos absolutos, arquivos ocultos (`.algo`) e symlinks para fora da raiz (a menos que você use `--follow-symlinks`). Mesmo com `--follow-symlinks`, links para arquivos ou pastas ocultas (ex.: `~/.ssh`) são recusados, e o que fica fora da raiz é somente leitura.
 - O `banner` do `course.conf` só aceita imagens dentro da própria pasta ou da biblioteca.
-- As rotas que gravam (`PUT`/`PATCH`/`DELETE`, os `POST` de `/api/fs/*`, que exigem JSON, e o `POST /api/refresh`) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode editar; use `--read-only` para impedir.
+- As rotas que gravam (`PUT`/`PATCH`/`DELETE`, os `POST` de `/api/fs/*`, que exigem JSON, e o `POST /api/refresh`) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode editar; use `--password` para exigir login, ou `--read-only` para bloquear a edição.
+- `--password` pede uma senha e exige login para ver qualquer coisa, inclusive vídeos e a API. A sessão é um cookie `HttpOnly` e `SameSite=Strict` válido por 30 dias (sobrevive a reinícios e cai quando a senha muda); 5 tentativas erradas bloqueiam aquele endereço por 60 segundos. A conexão é HTTP simples: a senha barra outras pessoas da rede, mas não protege contra quem captura o tráfego.
 - Nomes com `/ \ < > : " | ? *`, começando com ponto ou terminando em ponto são recusados (compatível com NTFS). A raiz, a `.lixeira` e os arquivos do app não podem ser alterados.
 - Só vídeo, áudio, imagens, PDF, legendas e texto são exibidos no navegador. Código web (`.html`, `.xhtml`, `.shtml`, `.js`, `.xml`) é servido como texto puro, SVG com CSP `sandbox` e qualquer outro tipo (ex.: `.xht`, `.svgz`, `.rss`) como download, para que nenhum material execute script na origem do app.
 - Os scripts de highlight.js, marked e DOMPurify vindos do CDN são conferidos com SRI (`integrity`). O Tailwind está fixado numa versão exata, mas o CDN dele não suporta SRI.
@@ -136,5 +148,15 @@ Todas as rotas aceitam o header `X-Lang: pt|en` (ou `Accept-Language`) para o id
 | `POST /api/fs/rename` | Renomeia: `{path, name}`; devolve `moved: [{from, to}]` |
 | `POST /api/fs/move` | Move vários itens: `{paths, dest}`; devolve `moved` |
 | `POST /api/fs/trash` | Move para `.lixeira`: `{paths}` |
+| `GET /api/trash` | Conteúdo da lixeira, agrupado por data (`batches`) |
+| `POST /api/trash/restore` | Restaura: `{items: [{batch, path}]}`; devolve `restored` |
+| `POST /api/trash/delete` | Exclui de vez: `{items: [{batch, path}]}` ou `{all: true}` |
+| `GET /api/durations?path=[&probe=0]` | Duração das aulas, total por subpasta e da pasta; `pending` > 0 indica que é preciso chamar de novo |
+| `GET /api/thumb?path=` | Miniatura do vídeo (JPEG, 320 px) |
+| `POST /api/login` / `POST /api/logout` | Abre (`{password}`) ou encerra a sessão quando `--password` está ativo |
 | `POST /api/refresh` | Reconstrói o índice |
 | `GET /api/docs` | Documentação interativa (Swagger) |
+
+## Licença
+
+[MIT](LICENSE)

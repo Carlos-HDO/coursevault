@@ -14,18 +14,27 @@ segundos (--ttl) para não varrer a árvore inteira a cada requisição.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import errno
+import getpass
+import hashlib
+import hmac
 import ipaddress
+import json
 import math
 import mimetypes
 import os
 import re
 import shutil
 import socket
+import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import unicodedata
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from datetime import datetime
 from email.utils import formatdate
@@ -45,12 +54,14 @@ from starlette.concurrency import run_in_threadpool
 APP_DIR = Path(__file__).resolve().parent
 INDEX_HTML = APP_DIR / "index.html"
 APP_FILES = {"server.py", "index.html", "requirements.txt", "course.conf.example", "cursos.sh",
-             "README.md", "README.pt-BR.md", "assets"}
+             "README.md", "README.pt-BR.md", "assets", "pyproject.toml", "LICENSE",
+             "build", "dist", "coursevault.egg-info"}
 
 ROOT: Path = Path(os.environ.get("HUB_ROOT", os.getcwd())).expanduser().resolve()
 FOLLOW_SYMLINKS = os.environ.get("HUB_FOLLOW_SYMLINKS") == "1"
 READ_ONLY = os.environ.get("HUB_READ_ONLY") == "1"
 TRASH_DIR = ".lixeira"  # oculto no hub (começa com ponto)
+TRASH_MANIFEST = ".manifest.json"  # o que foi excluído em cada lote (caminhos originais)
 
 # Idioma das mensagens: por requisição (header X-Lang do front, ou Accept-Language);
 # no terminal, o LANG do sistema.
@@ -64,6 +75,11 @@ LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 # Nomes aceitos no header Host (anti DNS rebinding); IPs literais sempre passam.
 # None = aceita qualquer nome (--allow-host '*').
 ALLOWED_HOSTS: set[str] | None = set(LOOPBACK)
+# Senha (--password): sessão em cookie. O token deriva da senha, então a sessão
+# sobrevive a reinícios do servidor e cai sozinha quando a senha muda.
+AUTH_TOKEN: str | None = None
+SESSION_COOKIE = "cv_session"
+SESSION_MAX_AGE = 30 * 24 * 3600
 
 CHUNK_SIZE = 1024 * 1024          # 1 MiB por bloco no streaming
 MAX_TEXT_BYTES = 2 * 1024 * 1024  # limite de pré-visualização de texto/código
@@ -628,6 +644,142 @@ def search(query: str, scope: str = "") -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# Duração e miniatura dos vídeos (ffprobe/ffmpeg, opcionais)
+# --------------------------------------------------------------------------- #
+
+PROBE_PER_CALL = 200  # vídeos medidos por chamada de /api/durations (o front pede o resto)
+
+
+def default_cache_dir() -> Path:
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "coursevault"
+
+
+class MediaInfo:
+    """Cache em disco fora da biblioteca (nada é gravado nas pastas dos cursos). A chave
+    inclui tamanho e data de modificação: arquivo trocado é medido de novo."""
+
+    def __init__(self) -> None:
+        self.ffprobe: str | None = None
+        self.ffmpeg: str | None = None
+        self.thumbs: Path | None = None
+        self._db: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
+        self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ffprobe")
+        self._thumb_slots = asyncio.Semaphore(2)  # no máximo 2 ffmpeg gerando miniaturas
+
+    def setup(self, cache_dir: Path) -> None:
+        ffprobe, ffmpeg = shutil.which("ffprobe"), shutil.which("ffmpeg")
+        if not (ffprobe or ffmpeg):
+            return
+        try:
+            (cache_dir / "thumbs").mkdir(parents=True, exist_ok=True)
+            db = sqlite3.connect(cache_dir / "media.sqlite3", check_same_thread=False)
+            db.execute("CREATE TABLE IF NOT EXISTS duration (key TEXT PRIMARY KEY, seconds REAL)")
+            db.commit()
+        except (OSError, sqlite3.Error) as exc:
+            print(tr(f"⚠  Cache de mídia desativado ({cache_dir}): {exc}", f"⚠  Media cache disabled ({cache_dir}): {exc}"))
+            return
+        self.ffprobe, self.ffmpeg, self.thumbs, self._db = ffprobe, ffmpeg, cache_dir / "thumbs", db
+
+    @staticmethod
+    def key(p: Path) -> str | None:
+        try:
+            st = p.stat()
+            return f"{p.resolve()}|{st.st_size}|{st.st_mtime_ns}"
+        except (OSError, RuntimeError):
+            return None
+
+    def cached(self, keys: list[str]) -> dict[str, float]:
+        out: dict[str, float] = {}
+        if not self._db:
+            return out
+        with self._lock:
+            for i in range(0, len(keys), 500):
+                chunk = keys[i:i + 500]
+                q = f"SELECT key, seconds FROM duration WHERE key IN ({','.join('?' * len(chunk))})"
+                out.update(self._db.execute(q, chunk).fetchall())
+        return out
+
+    def _store(self, rows: list[tuple[str, float]]) -> None:
+        if rows and self._db:
+            with self._lock:
+                self._db.executemany("INSERT OR REPLACE INTO duration VALUES (?, ?)", rows)
+                self._db.commit()
+
+    def _probe(self, p: Path) -> float:
+        """Duração em segundos; -1 quando o ffprobe não consegue ler (não tenta de novo)."""
+        try:
+            r = subprocess.run(
+                [self.ffprobe, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=nw=1:nk=1", "file:" + str(p)],  # "file:" evita protocolos do ffmpeg
+                capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+            return max(float(r.stdout.strip().splitlines()[0]), 0.0)
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            return -1.0
+
+    def durations(self, files: list[Path], probe_limit: int) -> tuple[dict[Path, float], int]:
+        """(duração conhecida de cada arquivo, quantos ainda faltam medir)."""
+        keys = {f: self.key(f) for f in files}
+        known = self.cached([k for k in keys.values() if k])
+        out = {f: known[k] for f, k in keys.items() if k in known}
+        missing = [f for f, k in keys.items() if k and k not in known]
+        todo = missing[:probe_limit] if self.ffprobe else []
+        if todo:
+            secs = list(self._pool.map(self._probe, todo))
+            self._store([(keys[f], s) for f, s in zip(todo, secs)])
+            out.update(zip(todo, secs))
+        return out, len(missing) - len(todo) if self.ffprobe else 0
+
+    async def thumbnail(self, f: Path) -> Path | None:
+        k = self.key(f)
+        if not (k and self.ffmpeg and self.thumbs):
+            return None
+        name = hashlib.sha1(k.encode()).hexdigest()
+        out, failed = self.thumbs / f"{name}.jpg", self.thumbs / f"{name}.fail"
+        if out.is_file():
+            return out
+        if failed.exists():
+            return None
+        async with self._thumb_slots:
+            if not out.is_file():
+                await run_in_threadpool(self._make_thumb, f, out, failed)
+        return out if out.is_file() else None
+
+    def _make_thumb(self, f: Path, out: Path, failed: Path) -> None:
+        dur = self.durations([f], 1)[0].get(f, -1)
+        tmp = out.with_name(f"{out.stem}.{os.getpid()}.{threading.get_ident()}.tmp.jpg")
+        # um quadro a 10% do vídeo (fora de vinhetas/telas pretas); se falhar, o primeiro
+        for ss in ([min(max(dur * 0.1, 1.0), 120.0)] if dur > 0 else [5.0]) + [0.0]:
+            try:
+                subprocess.run(
+                    [self.ffmpeg, "-nostdin", "-v", "error", "-ss", f"{ss:.2f}", "-i", "file:" + str(f),
+                     "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5", "-f", "image2", "-y", str(tmp)],
+                    capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            try:
+                if tmp.is_file() and tmp.stat().st_size > 0:
+                    os.replace(tmp, out)
+                    return
+            except OSError:
+                pass
+        try:
+            tmp.unlink(missing_ok=True)
+            failed.touch()
+        except OSError:
+            pass
+
+
+MEDIA = MediaInfo()
+
+
+# --------------------------------------------------------------------------- #
 # Envio de arquivos com suporte a HTTP Range (seek suave em vídeos)
 # --------------------------------------------------------------------------- #
 
@@ -768,7 +920,96 @@ class HostGuard:
             if not host_allowed(hostname.strip("[]")):
                 await PlainTextResponse(tr("Host não permitido", "Host not allowed"), status_code=400)(scope, receive, send)
                 return
+        if AUTH_TOKEN and scope["path"] != "/api/login" and not has_session(headers):
+            if scope["path"] == "/" and scope["method"] in ("GET", "HEAD"):
+                resp = Response(login_page(), media_type="text/html; charset=utf-8",
+                                headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"})
+            else:
+                resp = JSONResponse({"detail": tr("Faça login", "Please log in")}, status_code=401)
+            await resp(scope, receive, send)
+            return
         await self.app(scope, receive, send)
+
+
+def session_token(password: str) -> str:
+    return hmac.new(password.encode("utf-8"), b"coursevault-session-v1", hashlib.sha256).hexdigest()
+
+
+def has_session(headers: dict) -> bool:
+    for part in headers.get(b"cookie", b"").decode("latin-1").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == SESSION_COOKIE and hmac.compare_digest(value.encode("latin-1"), (AUTH_TOKEN or "").encode()):
+            return True
+    return False
+
+
+class LoginGuard:
+    """5 senhas erradas seguidas bloqueiam o endereço por 60 s (contra força bruta na LAN)."""
+    MAX_FAILS, BLOCK_SECONDS = 5, 60
+
+    def __init__(self) -> None:
+        self._state: dict[str, tuple[int, float]] = {}
+
+    def wait(self, ip: str) -> int:
+        _, until = self._state.get(ip, (0, 0.0))
+        return max(0, math.ceil(until - time.monotonic()))
+
+    def fail(self, ip: str) -> None:
+        n = self._state.get(ip, (0, 0.0))[0] + 1
+        self._state[ip] = (0, time.monotonic() + self.BLOCK_SECONDS) if n >= self.MAX_FAILS else (n, 0.0)
+
+    def reset(self, ip: str) -> None:
+        self._state.pop(ip, None)
+
+
+LOGIN_GUARD = LoginGuard()
+
+
+def login_page() -> str:
+    lang = _LANG.get()
+    return f"""<!doctype html>
+<html lang="{'pt-BR' if lang == 'pt' else 'en'}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>CourseVault</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%238b7cf6'/%3E%3Cpath d='M7 6.5v11l9-5.5z' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {{ color-scheme: dark; }}
+  body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+         background: #0f0f11; color: #d4d4d8; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }}
+  form {{ width: 100%; max-width: 340px; padding: 28px; border: 1px solid #2a2a30; border-radius: 14px; background: #141416; }}
+  h1 {{ margin: 0 0 4px; font-size: 20px; color: #fafafa; }}
+  p {{ margin: 0 0 20px; font-size: 13px; color: #a1a1aa; }}
+  input {{ width: 100%; box-sizing: border-box; height: 42px; padding: 0 12px; border-radius: 9px; border: 1px solid #36363d;
+          background: #18181b; color: #fafafa; font-size: 15px; outline: none; }}
+  input:focus {{ border-color: #8b7cf6; box-shadow: 0 0 0 3px rgba(139, 124, 246, .2); }}
+  button {{ width: 100%; height: 42px; margin-top: 12px; border: 0; border-radius: 9px; background: #8b7cf6; color: #fff;
+           font-size: 15px; font-weight: 600; cursor: pointer; }}
+  button:hover {{ background: #6d5ce8; }} button:disabled {{ opacity: .5; cursor: default; }}
+  #err {{ min-height: 20px; margin: 10px 0 0; color: #fca5a5; font-size: 13px; }}
+</style></head>
+<body><form id="f" autocomplete="on">
+  <h1>CourseVault</h1>
+  <p>{tr("Esta biblioteca é protegida por senha.", "This library is password protected.")}</p>
+  <input id="pw" type="password" name="password" autocomplete="current-password" autofocus required
+         placeholder="{tr('Senha', 'Password')}" aria-label="{tr('Senha', 'Password')}">
+  <button id="go" type="submit">{tr("Entrar", "Log in")}</button>
+  <div id="err" role="alert"></div>
+</form>
+<script>
+document.getElementById('f').addEventListener('submit', async e => {{
+  e.preventDefault();
+  const btn = document.getElementById('go'), err = document.getElementById('err');
+  btn.disabled = true; err.textContent = '';
+  try {{
+    const r = await fetch('/api/login', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ password: document.getElementById('pw').value }}) }});
+    if (r.ok) {{ location.reload(); return; }}
+    const d = await r.json().catch(() => ({{}}));
+    err.textContent = d.detail || r.statusText;
+  }} catch (x) {{ err.textContent = x.message; }}
+  btn.disabled = false;
+  document.getElementById('pw').select();
+}});
+</script></body></html>"""
 
 
 app = FastAPI(title="CourseVault", docs_url="/api/docs", redoc_url=None)
@@ -864,7 +1105,8 @@ def api_list(path: str = ""):
         "conf": public_conf(conf), "stats": stats.get(rel) or quick_stats(d),
         "breadcrumbs": crumbs, "siblings": siblings, "parent": parent,
         "dirs": dirs, "media": media, "docs": docs, "images": images, "others": others,
-        "hub": {"title": hub_title(), "root": str(ROOT), "writable": not READ_ONLY},
+        "hub": {"title": hub_title(), "root": str(ROOT), "writable": not READ_ONLY, "auth": AUTH_TOKEN is not None,
+                "media": {"duration": MEDIA.ffprobe is not None, "thumbs": MEDIA.ffmpeg is not None}},
     }
 
 
@@ -1244,10 +1486,251 @@ def api_trash(request: Request, body: TrashBody):
                 trashed.append(r)
     except HTTPException as exc:
         if trashed:
+            _manifest_update(base, add=trashed)
             return partial(exc, "trashed", trashed)
         raise
+    if trashed:
+        _manifest_update(base, add=trashed)
     fs_changed()
     return {"trashed": trashed, "folder": f"{TRASH_DIR}/{stamp}"}
+
+
+# --- Lixeira (listar, restaurar, excluir de vez) ---------------------------- #
+
+_STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{6}")
+
+
+def trash_root() -> Path:
+    t = ROOT / TRASH_DIR
+    if t.is_symlink():  # nunca apagar/restaurar através de um link
+        raise HTTPException(403, tr("A .lixeira não pode ser um link simbólico", ".lixeira cannot be a symlink"))
+    return t
+
+
+def _manifest_read(batch: Path) -> list[str] | None:
+    try:
+        data = json.loads(read_head(batch / TRASH_MANIFEST, 4 * 1024 * 1024))
+    except (OSError, ValueError):
+        return None
+    return [x for x in data if isinstance(x, str)] if isinstance(data, list) else None
+
+
+def _manifest_update(batch: Path, add: list[str] = (), remove: set[str] = frozenset()) -> None:
+    """Lotes do mesmo segundo compartilham a pasta: o manifesto é mesclado, não trocado."""
+    items = _manifest_read(batch) or []
+    items = [x for x in dict.fromkeys([*items, *add]) if x not in remove]
+    try:
+        if items:
+            atomic_write(batch, TRASH_MANIFEST, json.dumps(items, ensure_ascii=False, indent=1).encode("utf-8"))
+        else:
+            (batch / TRASH_MANIFEST).unlink(missing_ok=True)
+    except (OSError, HTTPException):
+        pass  # sem manifesto, a listagem deduz os itens pela estrutura
+
+
+def _guess_trashed(batch: Path, rel: str = "") -> list[str]:
+    """Lotes sem manifesto: desce pelas pastas que ainda existem na biblioteca (eram só o
+    caminho até o item); a primeira que não existe mais é o item excluído."""
+    out: list[str] = []
+    try:
+        entries = sorted(os.scandir(batch.joinpath(*rel.split("/")) if rel else batch), key=lambda e: natural_key(e.name))
+    except OSError:
+        return out
+    for e in entries:
+        if e.name.startswith("."):
+            continue
+        child = join_rel(rel, e.name)
+        orig = ROOT.joinpath(*child.split("/"))
+        if entry_is_dir(e) and not e.is_symlink() and orig.is_dir() and not orig.is_symlink():
+            out.extend(_guess_trashed(batch, child))
+        else:
+            out.append(child)
+    return out
+
+
+def _tree_size(p: Path) -> tuple[int, int]:
+    """(bytes, arquivos) sem seguir links."""
+    try:
+        if p.is_symlink() or not p.is_dir():
+            return p.lstat().st_size, 1
+    except OSError:
+        return 0, 0
+    size = files = 0
+    for dirpath, _, names in os.walk(p):
+        for n in names:
+            try:
+                size += os.lstat(os.path.join(dirpath, n)).st_size
+                files += 1
+            except OSError:
+                pass
+    return size, files
+
+
+def _prune_empty(start: Path, stop: Path) -> None:
+    """Remove pastas vazias de start até stop (inclusive), sem passar de stop."""
+    d = start
+    while d == stop or stop in d.parents:
+        try:
+            os.rmdir(d)
+        except OSError:
+            return
+        d = d.parent
+
+
+def _batch_cleanup(batch: Path) -> None:
+    try:
+        left = [n for n in os.listdir(batch) if n != TRASH_MANIFEST]
+    except OSError:
+        return
+    if not left:
+        (batch / TRASH_MANIFEST).unlink(missing_ok=True)
+        _prune_empty(batch, batch)
+
+
+@app.get("/api/trash")
+def api_trash_list():
+    t = trash_root()
+    batches: list[dict] = []
+    try:
+        names = sorted((n for n in os.listdir(t) if _STAMP_RE.fullmatch(n) and (t / n).is_dir()), reverse=True)
+    except OSError:
+        names = []
+    total = 0
+    for name in names:
+        b = t / name
+        manifest = _manifest_read(b)
+        rels = [r for r in manifest if os.path.lexists(b.joinpath(*r.split("/")))] if manifest is not None else []
+        if not rels:  # sem manifesto, ou manifesto desatualizado (mexeram na pasta à mão)
+            rels = _guess_trashed(b)
+        # legendas aparecem junto do vídeo, não como itens soltos
+        subs: dict[str, list[str]] = {}
+        for r in rels:
+            for c in companions(b.joinpath(*r.split("/"))):
+                cr = join_rel(parent_of(r), c.name)
+                if cr in rels and cr != r:
+                    subs.setdefault(r, []).append(cr)
+        owned = {c for cs in subs.values() for c in cs}
+        items = []
+        for r in rels:
+            if r in owned:
+                continue
+            p = b.joinpath(*r.split("/"))
+            size, files = _tree_size(p)
+            for c in subs.get(r, []):
+                size += _tree_size(b.joinpath(*c.split("/")))[0]
+            total += size
+            is_dir = p.is_dir() and not p.is_symlink()
+            items.append({"path": r, "name": r.rsplit("/", 1)[-1], "kind": "dir" if is_dir else classify(p.name),
+                          "size": size, "files": files if is_dir else None, "subtitles": len(subs.get(r, [])),
+                          "conflict": os.path.lexists(ROOT.joinpath(*r.split("/")))})
+        if items:
+            batches.append({"batch": name, "items": items})
+    return {"folder": TRASH_DIR, "batches": batches, "size": total}
+
+
+class TrashRef(BaseModel):
+    batch: str
+    path: str
+
+
+class TrashOpBody(BaseModel):
+    items: list[TrashRef] = []
+    all: bool = False
+
+
+def trash_entry(ref: TrashRef) -> tuple[Path, Path, list[str]]:
+    """(pasta do lote, item dentro dela, partes do caminho original), validados."""
+    if not _STAMP_RE.fullmatch(ref.batch):
+        raise HTTPException(400, tr("Lote inválido", "Invalid trash batch"))
+    parts = [p for p in ref.path.replace("\\", "/").split("/") if p not in ("", ".")]
+    if not parts or "\x00" in ref.path or any(p == ".." or is_hidden(p) for p in parts):
+        raise HTTPException(400, tr("Caminho inválido", "Invalid path"))
+    batch = trash_root() / ref.batch
+    p = batch.joinpath(*parts)
+    if not os.path.lexists(p):
+        raise HTTPException(404, tr(f"“{parts[-1]}” não está mais na lixeira", f"“{parts[-1]}” is no longer in the trash"))
+    try:
+        parent_real = p.parent.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise HTTPException(404, tr("Não encontrado", "Not found")) from None
+    if not is_within(parent_real, batch.resolve()):
+        raise HTTPException(403, tr("Acesso negado", "Access denied"))
+    return batch, p, parts
+
+
+def _remove(p: Path) -> None:
+    if p.is_dir() and not p.is_symlink():
+        shutil.rmtree(p)
+    else:
+        p.unlink()
+
+
+@app.post("/api/trash/restore")
+def api_trash_restore(request: Request, body: TrashOpBody):
+    check_write(request, json_body=True)
+    if not body.items or len(body.items) > 2000:
+        raise HTTPException(400, tr("Nenhum item para restaurar", "Nothing to restore"))
+    entries = [trash_entry(ref) for ref in body.items]  # valida tudo antes de mexer
+    restored: list[str] = []
+    try:
+        for batch, p, parts in entries:
+            rel = "/".join(parts)
+            if HIDE_APP_FILES and len(parts) == 1 and rel in APP_FILES:
+                raise HTTPException(403, tr("Arquivo do próprio Hub", "This is a CourseVault app file"))
+            dst = ROOT.joinpath(*parts)
+            anchor = dst.parent  # a pasta de destino (ou o ancestral que ainda existe) fica na raiz
+            while not anchor.exists() and anchor != ROOT:
+                anchor = anchor.parent
+            require_inside_root(anchor)
+            subs = companions(p)
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise HTTPException(500, tr(f"Não foi possível recriar a pasta: {exc.strerror}", f"Could not recreate the folder: {exc.strerror}")) from None
+            move_entry(p, dst, allow_copy=False)
+            done = [rel]
+            for s in subs:  # legendas voltam junto; se houver conflito, ficam na lixeira
+                try:
+                    move_entry(s, dst.parent / s.name, allow_copy=False)
+                    done.append(join_rel(parent_of(rel), s.name))
+                except HTTPException:
+                    pass
+            restored.extend(done)
+            _manifest_update(batch, remove=set(done))
+            _prune_empty(p.parent, batch)
+            _batch_cleanup(batch)
+    except HTTPException as exc:
+        if restored:
+            return partial(exc, "restored", restored)
+        raise
+    fs_changed()
+    return {"restored": restored}
+
+
+@app.post("/api/trash/delete")
+def api_trash_delete(request: Request, body: TrashOpBody):
+    """Exclui de vez (sem volta): os itens indicados ou, com all=true, a lixeira inteira."""
+    check_write(request, json_body=True)
+    t = trash_root()
+    try:
+        if body.all:
+            if t.exists():
+                shutil.rmtree(t)
+            return {"deleted": "all"}
+        if not body.items or len(body.items) > 2000:
+            raise HTTPException(400, tr("Nenhum item para excluir", "Nothing to delete"))
+        deleted: list[str] = []
+        for batch, p, parts in [trash_entry(ref) for ref in body.items]:
+            rel = "/".join(parts)
+            for x in [p, *companions(p)]:
+                _remove(x)
+                deleted.append(join_rel(parent_of(rel), x.name))
+            _manifest_update(batch, remove=set(deleted))
+            _prune_empty(p.parent, batch)
+            _batch_cleanup(batch)
+        return {"deleted": deleted}
+    except OSError as exc:
+        raise HTTPException(500, tr(f"Não foi possível excluir: {exc.strerror}", f"Could not delete: {exc.strerror}")) from None
 
 
 @app.get("/api/text")
@@ -1279,6 +1762,80 @@ def api_subtitle(path: str):
     return Response(text, media_type="text/vtt; charset=utf-8")
 
 
+@app.get("/api/durations")
+def api_durations(path: str = "", probe: bool = True):
+    """Duração das aulas da pasta, total de cada subpasta e da pasta inteira. Com probe=0
+    só devolve o que já está em cache (usado na raiz, para não medir a biblioteca toda).
+    "pending" > 0: ainda há vídeos para medir; o front chama de novo."""
+    d, rel = safe_path(path)
+    if not MEDIA.ffprobe:
+        return {"enabled": False}
+    entries, _ = INDEX.snapshot()
+    prefix = rel + "/" if rel else ""
+    media = [e for e in entries if e["type"] in ("video", "audio") and e["path"].startswith(prefix)]
+    media.sort(key=lambda e: e["parent"] != rel)  # mede primeiro as aulas que estão na tela
+    files = {e["path"]: ROOT.joinpath(*e["path"].split("/")) for e in media}
+    secs, pending = MEDIA.durations(list(files.values()), PROBE_PER_CALL if probe else 0)
+
+    def bucket() -> dict:
+        return {"seconds": 0.0, "count": 0, "known": 0}
+    total, dirs, out_files = bucket(), {}, {}
+    for e in media:
+        s = secs.get(files[e["path"]])
+        child = e["path"][len(prefix):].split("/", 1)[0]
+        targets = [total] + ([dirs.setdefault(join_rel(rel, child), bucket())] if e["parent"] != rel else [])
+        for b in targets:
+            b["count"] += 1
+            if s is not None:
+                b["known"] += 1
+                b["seconds"] += max(s, 0.0)
+        if e["parent"] == rel and s is not None and s > 0:
+            out_files[e["path"]] = round(s, 1)
+    return {"enabled": True, "path": rel, "files": out_files, "dirs": dirs, "total": total, "pending": pending}
+
+
+@app.get("/api/thumb")
+async def api_thumb(request: Request, path: str):
+    f, _ = safe_path(path)
+    if not MEDIA.ffmpeg or classify(f.name) != "video" or not f.is_file():
+        raise HTTPException(404, tr("Sem miniatura", "No thumbnail"))
+    thumb = await MEDIA.thumbnail(f)
+    if thumb is None:
+        raise HTTPException(404, tr("Sem miniatura", "No thumbnail"))
+    return send_file(thumb, request, media_type="image/jpeg")
+
+
+class LoginBody(BaseModel):
+    password: str
+
+
+@app.post("/api/login")
+async def api_login(request: Request, body: LoginBody):
+    check_origin(request)
+    if not AUTH_TOKEN:
+        return {"ok": True}
+    ip = request.client.host if request.client else ""
+    wait = LOGIN_GUARD.wait(ip)
+    if wait:
+        raise HTTPException(429, tr(f"Muitas tentativas. Tente de novo em {wait} s", f"Too many attempts. Try again in {wait} s"))
+    if not hmac.compare_digest(session_token(body.password), AUTH_TOKEN):
+        LOGIN_GUARD.fail(ip)
+        await asyncio.sleep(1)
+        raise HTTPException(401, tr("Senha incorreta", "Wrong password"))
+    LOGIN_GUARD.reset(ip)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(SESSION_COOKIE, AUTH_TOKEN, max_age=SESSION_MAX_AGE, httponly=True, samesite="strict", path="/")
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout(request: Request):
+    check_origin(request)
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="strict")
+    return resp
+
+
 @app.post("/api/refresh")
 def api_refresh(request: Request):
     check_origin(request)  # reindexar a árvore toda é caro: outro site não pode disparar
@@ -1299,7 +1856,7 @@ def index():
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
-    global FOLLOW_SYMLINKS, ALLOWED_HOSTS, READ_ONLY
+    global FOLLOW_SYMLINKS, ALLOWED_HOSTS, READ_ONLY, AUTH_TOKEN, SESSION_COOKIE
     ap = argparse.ArgumentParser(description=tr("CourseVault — portal local para suas pastas de cursos.",
                                              "CourseVault — a local portal for your course folders."))
     ap.add_argument("-r", "--root", default=os.environ.get("HUB_ROOT", "."),
@@ -1317,6 +1874,11 @@ def main() -> None:
                             "extra name accepted in the Host header in LAN mode (repeatable; '*' accepts any)"))
     ap.add_argument("--read-only", action="store_true",
                     help=tr("desativa a edição (capa, criar, renomear, mover e excluir)", "disable editing (cover, create, rename, move and delete)"))
+    ap.add_argument("--password", action="store_true",
+                    help=tr("exige senha para abrir o hub (pedida no terminal, ou na variável COURSEVAULT_PASSWORD)",
+                            "require a password to open CourseVault (asked in the terminal, or set COURSEVAULT_PASSWORD)"))
+    ap.add_argument("--no-ffmpeg", action="store_true",
+                    help=tr("não usar ffprobe/ffmpeg (duração e miniaturas dos vídeos)", "do not use ffprobe/ffmpeg (video durations and thumbnails)"))
     args = ap.parse_args()
 
     root = Path(args.root).expanduser()
@@ -1339,6 +1901,26 @@ def main() -> None:
             ALLOWED_HOSTS = lan_host_names() | extra
             print(tr(f"   Acesse pelo IP ou por: {', '.join(sorted(ALLOWED_HOSTS - LOOPBACK))} (outros nomes: --allow-host)",
                      f"   Use the IP address or: {', '.join(sorted(ALLOWED_HOSTS - LOOPBACK))} (other names: --allow-host)"))
+
+    password = os.environ.get("COURSEVAULT_PASSWORD") or None
+    if args.password and not password:
+        if not sys.stdin.isatty():
+            ap.error(tr("--password sem terminal: defina COURSEVAULT_PASSWORD", "--password without a terminal: set COURSEVAULT_PASSWORD"))
+        try:
+            password = getpass.getpass(tr("Senha do hub: ", "CourseVault password: "))
+            if not password or password != getpass.getpass(tr("Repita a senha: ", "Repeat the password: ")):
+                ap.error(tr("as senhas não conferem (ou estão vazias)", "passwords do not match (or are empty)"))
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(1)
+    if password:
+        AUTH_TOKEN = session_token(password)
+        SESSION_COOKIE = f"cv_session_{args.port}"  # cookies não separam portas: um por instância
+        print(tr("🔒 Senha ativada: é preciso entrar para usar o hub.", "🔒 Password enabled: log in to use CourseVault."))
+    elif args.host not in LOOPBACK:
+        print(tr("   Dica: use --password para exigir senha na LAN.", "   Tip: use --password to require a password on the LAN."))
+    if not args.no_ffmpeg:
+        MEDIA.setup(default_cache_dir())
 
     threading.Thread(target=INDEX.snapshot, daemon=True).start()  # pré-aquece o índice
     shown_host = "localhost" if args.host in LOOPBACK or args.host == "0.0.0.0" else args.host

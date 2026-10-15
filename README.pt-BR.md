@@ -10,6 +10,8 @@ Sem banco de dados e sem build de Node: um `server.py` (FastAPI) + um `index.htm
 (Tailwind via CDN + JavaScript puro). A interface está em **português e inglês**: use o botão
 de idioma no canto superior direito.
 
+![Dashboard do CourseVault](assets/dashboard.png)
+
 ## Instalação
 
 Requer Python 3.9+.

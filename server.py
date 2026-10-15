@@ -45,7 +45,7 @@ from starlette.concurrency import run_in_threadpool
 APP_DIR = Path(__file__).resolve().parent
 INDEX_HTML = APP_DIR / "index.html"
 APP_FILES = {"server.py", "index.html", "requirements.txt", "course.conf.example", "cursos.sh",
-             "README.md", "README.pt-BR.md"}
+             "README.md", "README.pt-BR.md", "assets"}
 
 ROOT: Path = Path(os.environ.get("HUB_ROOT", os.getcwd())).expanduser().resolve()
 FOLLOW_SYMLINKS = os.environ.get("HUB_FOLLOW_SYMLINKS") == "1"

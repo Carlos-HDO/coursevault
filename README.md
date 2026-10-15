@@ -11,6 +11,8 @@ No database and no Node build: one `server.py` (FastAPI) plus one `index.html`
 (Tailwind via CDN + plain JavaScript). The interface is available in **English and
 Portuguese** — use the language button in the top-right corner.
 
+![CourseVault Dashboard](assets/dashboard.png)
+
 ## Installation
 
 Requires Python 3.9+.

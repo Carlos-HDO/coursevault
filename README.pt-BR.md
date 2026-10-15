@@ -51,7 +51,7 @@ O navegador abre em `http://localhost:8000`.
 | `--follow-symlinks` | Permite links simbólicos que apontam para fora da raiz (ex.: cursos em um HD externo). Esses itens ficam somente leitura |
 | `--allow-host NOME` | Com `--host 0.0.0.0`: nome extra aceito no header `Host` (repetível). IPs e o nome da própria máquina sempre funcionam |
 | `--ttl 30` | Segundos de cache do índice de busca e das contagens recursivas |
-| `--read-only` | Desativa toda a edição (capa, criar, renomear, mover e excluir) |
+| `--read-only` | Desativa toda a edição (capa, criar, renomear, mover e excluir). O progresso continua sendo salvo |
 | `--password` | Exige senha para abrir a biblioteca (pedida no terminal, ou lida de `$COURSEVAULT_PASSWORD`). Pensada para `--host 0.0.0.0` |
 | `--no-ffmpeg` | Não usa `ffprobe`/`ffmpeg` (duração e miniaturas das aulas) |
 
@@ -109,7 +109,8 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 - **Editar capa:** o botão "Editar capa" no cabeçalho de uma pasta permite enviar uma imagem (escolher, arrastar ou colar com Ctrl+V), usar uma URL, remover a capa e ajustar o enquadramento vertical. A imagem é salva como `banner.<ext>` na pasta e o `course.conf` é atualizado. A capa anterior não é apagada: vira `.<nome>.bak`, oculto no hub.
 - **Organizar pastas e arquivos:** cada pasta, aula e arquivo tem um menu ⋯ com **Renomear**, **Mover para…** e **Excluir**. "Nova pasta" e "Selecionar" ficam no topo da raiz e no cabeçalho de cada pasta. No modo seleção, clique nos itens e use a barra de baixo para mover ou excluir vários de uma vez. "Mover para…" abre um navegador de pastas, com busca em toda a biblioteca e opção de criar a pasta de destino ali mesmo. Legendas com o mesmo nome do vídeo acompanham o vídeo ao renomear, mover e excluir. O progresso, os favoritos e o "Continuar assistindo" seguem os itens para o novo caminho. Nada é sobrescrito: se já existir um item com o mesmo nome no destino, a operação para.
 - **Lixeira:** "Excluir" não apaga nada. O item vai para `.lixeira/<data_hora>/<caminho original>` na raiz dos cursos (oculta no hub). O botão **Lixeira** no topo da página inicial lista o que está lá, por data: **Restaurar** devolve o item ao caminho original (recriando as pastas, se preciso, e com as legendas) e **Excluir de vez** libera o espaço (dois cliques para confirmar). **Esvaziar lixeira** apaga tudo.
-- **Progresso e favoritos:** ficam salvos no `localStorage` do navegador. O app só mexe nas suas pastas quando você pede: editar a capa (`banner.*` e `course.conf`) ou criar, renomear, mover e excluir itens.
+- **Progresso e favoritos** (aulas assistidas, onde você parou, favoritos e "Continuar assistindo") ficam em `.coursevault/state.json` na raiz da biblioteca: acompanham o HD e são os mesmos em qualquer navegador e aparelho (PC, tablet na LAN). Cada navegador envia só o que mudou e recebe as mudanças dos outros ao navegar ou voltar para a aba. Renomear e mover itens leva o progresso junto. Na primeira vez que um navegador abre a biblioteca, o progresso que ele tinha salvo localmente (versões anteriores) é somado ao do servidor, sem sobrescrever nada. Se a biblioteca não puder ser gravada, o progresso fica só naquele navegador, como antes.
+- Fora a pasta `.coursevault/`, o app só mexe nas suas pastas quando você pede: editar a capa (`banner.*` e `course.conf`) ou criar, renomear, mover e excluir itens.
 
 ## Segurança
 
@@ -164,6 +165,8 @@ Todas as rotas aceitam o header `X-Lang: pt|en` (ou `Accept-Language`) para o id
 | `GET /api/trash` | Conteúdo da lixeira, agrupado por data (`batches`) |
 | `POST /api/trash/restore` | Restaura: `{items: [{batch, path}]}`; devolve `restored` |
 | `POST /api/trash/delete` | Exclui de vez: `{items: [{batch, path}]}` ou `{all: true}` |
+| `GET /api/state[?rev=]` | Progresso compartilhado (`watched`, `pos`, `favs`, `last`, `rev`); com o `rev` atual, só `{unchanged: true}` |
+| `PATCH /api/state` | Aplica mudanças: `{watched: {caminho: ts\|null}, pos: {…}, favs: {…}, last}`; `merge: true` só preenche o que falta |
 | `GET /api/durations?path=[&probe=0]` | Duração das aulas, total por subpasta e da pasta; `pending` > 0 indica que é preciso chamar de novo |
 | `GET /api/thumb?path=` | Miniatura do vídeo (JPEG, 320 px) |
 | `POST /api/login` / `POST /api/logout` | Abre (`{password}`) ou encerra a sessão quando `--password` está ativo |

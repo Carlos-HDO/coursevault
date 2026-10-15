@@ -183,7 +183,7 @@ async function api(url, opts = {}) {
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`, data = null;
     try { data = await r.json(); if (typeof data.detail === 'string') msg = data.detail; } catch {}
-    throw Object.assign(new Error(msg), { data });
+    throw Object.assign(new Error(msg), { data, status: r.status });
   }
   return r.json();
 }
@@ -444,6 +444,94 @@ const isFav = p => !!favs[p];
 const isTop = x => !!(x.conf && x.conf.pinned) || isFav(x.path);
 const favFirst = list => [...list].sort((a, b) => isTop(b) - isTop(a)); // estável: mantém a ordem do servidor
 
+/* ------------------------------------------------------------------ */
+/* Progresso no servidor (.coursevault/state.json na biblioteca)        */
+/* ------------------------------------------------------------------ */
+// Vale para todos os navegadores e aparelhos. Cada mudança entra numa fila e vai em lote (só o
+// que mudou); o localStorage continua como cache e como reserva se o servidor não puder gravar.
+const SYNC = { on: false, rev: null, pending: null, timer: 0, busy: false };
+const emptyDelta = () => ({ watched: {}, pos: {}, favs: {} });
+
+function queueSync(kind, key, value) {
+  if (!SYNC.on) return;
+  const p = SYNC.pending || (SYNC.pending = emptyDelta());
+  if (kind === 'last') p.last = value; else p[kind][key] = value ?? null;
+  clearTimeout(SYNC.timer);
+  SYNC.timer = setTimeout(flushSync, 1500);
+}
+function mergeDelta(older, newer) {
+  if (!newer) return older;
+  const out = emptyDelta();
+  for (const k of ['watched', 'pos', 'favs']) Object.assign(out[k], older[k], newer[k]);
+  if ('last' in older) out.last = older.last;
+  if ('last' in newer) out.last = newer.last;
+  return out;
+}
+async function flushSync({ keepalive = false } = {}) {
+  clearTimeout(SYNC.timer);
+  const body = SYNC.pending;
+  if (!SYNC.on || !body) return;
+  if (SYNC.busy && !keepalive) { SYNC.timer = setTimeout(flushSync, 1500); return; }
+  SYNC.pending = null; SYNC.busy = true;
+  try {
+    const r = await api('/api/state', { method: 'PATCH', keepalive,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.prev === SYNC.rev) SYNC.rev = r.rev;  // senão outro aparelho gravou antes: a próxima leitura traz tudo
+  } catch (e) {
+    SYNC.pending = mergeDelta(body, SYNC.pending);
+    if (e.status >= 500) { SYNC.on = false; console.warn('Progresso só neste navegador:', e.message); }
+  } finally { SYNC.busy = false; }
+}
+function replaceInPlace(target, src, overlay) {
+  for (const k of Object.keys(target)) delete target[k];
+  Object.assign(target, src || {});
+  for (const [k, v] of Object.entries(overlay || {})) { if (v == null) delete target[k]; else target[k] = v; }
+}
+function applyState(doc) {
+  SYNC.rev = doc.rev;
+  const p = SYNC.pending;  // mudanças locais ainda não enviadas continuam valendo
+  replaceInPlace(watched, doc.watched, p && p.watched);
+  replaceInPlace(positions, doc.pos, p && p.pos);
+  replaceInPlace(favs, doc.favs, p && p.favs);
+  store.set('watched', watched); store.set('pos', positions); store.set('favs', favs);
+  store.set('last', p && 'last' in p ? p.last : doc.last);
+}
+async function pullState() {
+  if (!SYNC.on) return false;
+  try {
+    const r = await api('/api/state' + (SYNC.rev != null ? `?rev=${SYNC.rev}` : ''));
+    if (r.unchanged) return false;
+    applyState(r);
+    return true;
+  } catch { return false; }
+}
+async function initSync() {
+  let r;
+  try { r = await api('/api/state'); } catch { return; }  // sem servidor de estado: fica só no navegador
+  SYNC.on = true;
+  const flag = 'imported:' + r.id;
+  if (!store.get(flag, false)) {
+    // primeira vez neste navegador: leva o que já estava salvo aqui (sem sobrescrever o servidor)
+    const last = store.get('last', null);
+    if (Object.keys(watched).length || Object.keys(positions).length || Object.keys(favs).length || last) {
+      try {
+        await api('/api/state', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ watched, pos: positions, favs, ...(last ? { last } : {}), merge: true }) });
+        r = await api('/api/state');
+      } catch (e) { if (e.status >= 500) SYNC.on = false; return; }
+    }
+    store.set(flag, true);
+  }
+  applyState(r);
+}
+// Voltou para a aba: traz o que outros aparelhos gravaram.
+async function onVisible() {
+  if (!(await pullState()) || !S.data) return;
+  const busy = S.playing !== -1 || !$('#modal').classList.contains('hidden') || S.selecting;
+  if (busy) { refreshProgressUI(); return; }
+  const y = window.scrollY; renderView(S.data); window.scrollTo(0, y);
+}
+
 const S = {
   path: null, data: null, routeSeq: 0,
   activeTags: new Set(),
@@ -494,12 +582,14 @@ const progText = p => t('prog', p);
 function setWatched(path, val) {
   if (val) watched[path] = Date.now(); else delete watched[path];
   store.set('watched', watched);
+  queueSync('watched', path, watched[path]);
   refreshProgressUI();
 }
 function savePos(path, t, dur) {
   if (!t || t < 5) return;
   if (dur && t > dur - 15) delete positions[path]; else positions[path] = Math.floor(t);
   store.set('pos', positions);
+  queueSync('pos', path, positions[path]);
 }
 function progBar(prefix, total, cls = 'h-1') {
   const p = progress(prefix, total);
@@ -509,6 +599,7 @@ function progBar(prefix, total, cls = 'h-1') {
 function toggleFav(path) {
   if (favs[path]) delete favs[path]; else favs[path] = Date.now();
   store.set('favs', favs);
+  queueSync('favs', path, favs[path]);
   toast(t(favs[path] ? 'fav_added' : 'fav_removed'));
   if (S.playing === -1 && S.data) { const y = window.scrollY; renderView(S.data); window.scrollTo(0, y); return; }
   // com um vídeo aberto, só atualiza as estrelas (re-renderizar derrubaria o player)
@@ -936,7 +1027,7 @@ async function route({ force = false } = {}) {
   const seq = ++S.routeSeq;
   const slow = setTimeout(renderLoading, 150);
   try {
-    const d = await api(`/api/list?path=${enc(path)}`);
+    const [d] = await Promise.all([api(`/api/list?path=${enc(path)}`), pullState()]);
     if (seq !== S.routeSeq) return;
     S.data = d;
     if (!path) S.activeTags = new Set((params.get('tag') || '').split(',').filter(Boolean));
@@ -1033,7 +1124,7 @@ function openPlayer(i, { autoplay = true } = {}) {
   });
   v.addEventListener('ended', () => {
     setWatched(m.path, true);
-    delete positions[m.path]; store.set('pos', positions);
+    delete positions[m.path]; store.set('pos', positions); queueSync('pos', m.path, null);
     if (prefs.autoplay && i < d.media.length - 1) openPlayer(i + 1);
   });
   v.addEventListener('error', () => {
@@ -1047,7 +1138,8 @@ function openPlayer(i, { autoplay = true } = {}) {
 
   row.scrollIntoView({ behavior: 'smooth', block: 'start' });
   history.replaceState(null, '', hashFor(d.path, { play: m.name }));
-  store.set('last', { path: m.path, title: m.title, folder: d.path, folderTitle: d.title, at: Date.now() });
+  const last = { path: m.path, title: m.title, folder: d.path, folderTitle: d.title, at: Date.now() };
+  store.set('last', last); queueSync('last', '', last);
 }
 
 function closePlayer({ updateHash = false } = {}) {
@@ -1380,6 +1472,7 @@ function fsRename(it) {
       const name = $('#fs-name').value.trim();
       if (name === it.name) { closeModal(); return; }
       closePlayer({ updateHash: true });
+      await flushSync();
       const r = await postJSON('/api/fs/rename', { path: it.path, name });
       toast(t('renamed'));
       afterMove(r.moved);
@@ -1507,6 +1600,7 @@ async function pickerConfirm() {
   pk.busy = true; paintPicker();
   closePlayer({ updateHash: true });
   try {
+    await flushSync();
     const r = await postJSON('/api/fs/move', { paths: pk.paths, dest: pk.cwd });
     toast(t('moved_to', { t: pk.title || t('home') }));
     afterMove(r.moved);
@@ -1706,7 +1800,10 @@ async function handleAction(el) {
     case 'toggle-watched': { const p = d.media[i].path; setWatched(p, !watched[p]); break; }
     case 'mark-all': {
       const all = d.media.every(m => watched[m.path]);
-      d.media.forEach(m => { if (all) delete watched[m.path]; else watched[m.path] = Date.now(); });
+      d.media.forEach(m => {
+        if (all) delete watched[m.path]; else watched[m.path] = Date.now();
+        queueSync('watched', m.path, watched[m.path]);
+      });
       store.set('watched', watched); refreshProgressUI();
       toast(t(all ? 'unmarked' : 'all_marked'));
       break;
@@ -1897,11 +1994,15 @@ document.addEventListener('keydown', e => {
 });
 
 window.addEventListener('hashchange', () => route());
-window.addEventListener('pagehide', () => closePlayer());
+window.addEventListener('pagehide', () => { closePlayer(); flushSync({ keepalive: true }); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSync({ keepalive: true }); else onVisible();
+});
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
   applyStatic();
+  await initSync();
   route();
 });
 </script>

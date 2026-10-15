@@ -52,7 +52,7 @@ The browser opens at `http://localhost:8000`.
 | `--follow-symlinks` | Allow symlinks that point outside the root (e.g. courses on an external drive). Those items are read-only |
 | `--allow-host NAME` | With `--host 0.0.0.0`: extra name accepted in the `Host` header (repeatable). IP addresses and the machine's own name always work |
 | `--ttl 30` | Seconds to cache the search index and recursive counts |
-| `--read-only` | Disable all editing (cover, create, rename, move and delete) |
+| `--read-only` | Disable all editing (cover, create, rename, move and delete). Progress is still saved |
 | `--password` | Require a password to open the library (asked in the terminal, or taken from `$COURSEVAULT_PASSWORD`). Meant for `--host 0.0.0.0` |
 | `--no-ffmpeg` | Do not use `ffprobe`/`ffmpeg` (lesson durations and thumbnails) |
 
@@ -109,7 +109,8 @@ A `course.conf` in the root sets the library title (`title = My Courses`).
 - **Edit cover:** the "Edit cover" button in a folder header lets you upload an image (choose, drag or paste with Ctrl+V), use a URL, remove the cover and adjust its vertical framing. The image is saved as `banner.<ext>` in the folder and `course.conf` is updated. The previous cover is never deleted: it becomes `.<name>.bak`, hidden in the library.
 - **Organize folders and files:** every folder, lesson and file has a ⋯ menu with **Rename**, **Move to…** and **Delete**. "New folder" and "Select" sit at the top of the root and in each folder header. In selection mode, click items and use the bottom bar to move or delete several at once. "Move to…" opens a folder browser with library-wide search and lets you create the destination folder on the spot. Subtitles with the same name follow their video when renaming, moving or deleting. Progress, favorites and "Continue watching" follow items to their new path. Nothing is overwritten: if an item with the same name already exists at the destination, the operation stops.
 - **Trash:** "Delete" erases nothing. Items go to `.lixeira/<date_time>/<original path>` in the library root (hidden in the app). The **Trash** button at the top of the home page lists what is there, by date: **Restore** puts an item back in its original path (recreating folders if needed, with its subtitles) and **Delete forever** frees the space (two clicks to confirm). **Empty trash** erases everything.
-- **Progress and favorites** are stored in the browser's `localStorage`. The app only touches your folders when you ask it to: editing a cover (`banner.*` and `course.conf`) or creating, renaming, moving and deleting items.
+- **Progress and favorites** (watched lessons, where you stopped, favorites and "Continue watching") are saved in `.coursevault/state.json` in the library root, so they travel with the drive and are the same in every browser and device (PC, tablet on the LAN). Each browser sends only what changed and picks up other devices' changes when you navigate or come back to the tab. Renaming and moving items carries their progress along. The first time a browser opens the library, progress it had saved locally (older versions) is merged in without overwriting anything. If the library is not writable, progress stays in that browser only, as before.
+- Apart from `.coursevault/`, the app only touches your folders when you ask it to: editing a cover (`banner.*` and `course.conf`) or creating, renaming, moving and deleting items.
 
 ## Security
 
@@ -164,6 +165,8 @@ All routes accept an `X-Lang: pt|en` header (or `Accept-Language`) for the langu
 | `GET /api/trash` | Trash contents, grouped by date (`batches`) |
 | `POST /api/trash/restore` | Restore: `{items: [{batch, path}]}`; returns `restored` |
 | `POST /api/trash/delete` | Delete for good: `{items: [{batch, path}]}` or `{all: true}` |
+| `GET /api/state[?rev=]` | Shared progress (`watched`, `pos`, `favs`, `last`, `rev`); with the current `rev`, only `{unchanged: true}` |
+| `PATCH /api/state` | Apply changes: `{watched: {path: ts\|null}, pos: {…}, favs: {…}, last}`; `merge: true` only fills in missing entries |
 | `GET /api/durations?path=[&probe=0]` | Lesson durations, totals per subfolder and for the folder; `pending` > 0 means call again |
 | `GET /api/thumb?path=` | Video thumbnail (JPEG, 320 px) |
 | `POST /api/login` / `POST /api/logout` | Start (`{password}`) or end the session when `--password` is on |

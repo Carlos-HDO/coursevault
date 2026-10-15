@@ -64,6 +64,8 @@ FOLLOW_SYMLINKS = os.environ.get("HUB_FOLLOW_SYMLINKS") == "1"
 READ_ONLY = os.environ.get("HUB_READ_ONLY") == "1"
 TRASH_DIR = ".lixeira"  # oculto no hub (começa com ponto)
 TRASH_MANIFEST = ".manifest.json"  # o que foi excluído em cada lote (caminhos originais)
+STATE_DIR = ".coursevault"  # progresso compartilhado, na raiz da biblioteca (oculto no hub)
+STATE_FILE = "state.json"
 
 # Idioma das mensagens: por requisição (header X-Lang do front, ou Accept-Language);
 # no terminal, o LANG do sistema.
@@ -783,6 +785,147 @@ MEDIA = MediaInfo()
 
 
 # --------------------------------------------------------------------------- #
+# Progresso, posição, favoritos e "continuar assistindo" (compartilhados)
+# --------------------------------------------------------------------------- #
+
+STATE_KINDS = ("watched", "pos", "favs")
+LAST_KEYS = {"path": str, "title": str, "folder": str, "folderTitle": str, "at": (int, float)}
+
+
+class LibraryState:
+    """Fica na própria biblioteca (.coursevault/state.json): acompanha o HD e vale para todos os
+    navegadores e aparelhos. Os clientes mandam só o que mudou e o servidor aplica sobre o que
+    tem, então um aparelho não apaga o que o outro gravou. "rev" sobe a cada gravação."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._doc: dict | None = None
+        self._stamp: tuple | None = None
+        self._bad = False  # arquivo ilegível: guardado à parte antes de gravar por cima
+
+    @staticmethod
+    def _empty() -> dict:
+        return {"version": 1, "rev": 0, "watched": {}, "pos": {}, "favs": {}, "last": None}
+
+    @staticmethod
+    def clean_last(v) -> dict | None:
+        if not isinstance(v, dict):
+            return None
+        out = {k: v[k] for k, t in LAST_KEYS.items()
+               if isinstance(v.get(k), t) and not isinstance(v.get(k), bool) and len(str(v[k])) <= 2000}
+        return out if isinstance(out.get("path"), str) else None
+
+    def _load(self) -> dict:
+        f = ROOT / STATE_DIR / STATE_FILE
+        try:
+            st = f.stat()
+            stamp = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            stamp = None
+        if self._doc is not None and stamp == self._stamp:
+            return self._doc
+        doc = self._empty()
+        self._bad = False
+        if stamp:
+            try:
+                data = json.loads(read_head(f, 64 * 1024 * 1024))
+                if not isinstance(data, dict):
+                    raise ValueError("not an object")
+                for k in STATE_KINDS:
+                    if isinstance(data.get(k), dict):
+                        doc[k] = {p: v for p, v in data[k].items()
+                                  if isinstance(p, str) and isinstance(v, (int, float)) and not isinstance(v, bool)}
+                doc["last"] = self.clean_last(data.get("last"))
+                doc["rev"] = data["rev"] if isinstance(data.get("rev"), int) else 0
+            except (OSError, ValueError):
+                self._bad = True
+        self._doc, self._stamp = doc, stamp
+        return doc
+
+    def _save(self, doc: dict) -> None:
+        d = ROOT / STATE_DIR
+        if d.is_symlink():
+            raise HTTPException(403, tr(f"{STATE_DIR} não pode ser um link simbólico", f"{STATE_DIR} cannot be a symlink"))
+        try:
+            d.mkdir(exist_ok=True)
+            if self._bad:
+                os.replace(d / STATE_FILE, d / f"{STATE_FILE}.bad-{datetime.now():%Y%m%d-%H%M%S}")
+                self._bad = False
+        except OSError as exc:
+            raise HTTPException(507, tr(f"Não foi possível gravar o progresso: {exc.strerror}",
+                                        f"Could not save progress: {exc.strerror}")) from None
+        doc["rev"] += 1
+        atomic_write(d, STATE_FILE, json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        try:
+            st = (d / STATE_FILE).stat()
+            self._stamp = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            self._stamp = None
+
+    def get(self) -> dict:
+        with self._lock:
+            return json.loads(json.dumps(self._load()))  # cópia
+
+    def patch(self, delta: dict, merge: bool) -> tuple[int, int]:
+        """Aplica as mudanças; com merge, só preenche o que ainda não existe (importação do
+        localStorage). Devolve (rev antes, rev depois)."""
+        with self._lock:
+            doc = self._load()
+            before, changed = doc["rev"], False
+            for kind in STATE_KINDS:
+                for path, value in (delta.get(kind) or {}).items():
+                    if merge and path in doc[kind]:
+                        continue
+                    if isinstance(value, float) and value.is_integer():
+                        value = int(value)
+                    if value is None:
+                        changed |= doc[kind].pop(path, None) is not None
+                    elif doc[kind].get(path) != value:
+                        doc[kind][path], changed = value, True
+            if "last" in delta:
+                last = self.clean_last(delta["last"])
+                cur = doc["last"]
+                if not (merge and cur and (not last or cur.get("at", 0) >= last.get("at", 0))) and last != cur:
+                    doc["last"], changed = last, True
+            if changed:
+                self._save(doc)
+            return before, doc["rev"]
+
+    def migrate(self, moved: list[dict]) -> None:
+        """Renomear/mover leva junto o progresso dos itens (para todos os aparelhos)."""
+        if not moved:
+            return
+
+        def remap(p: str) -> str:
+            for m in moved:
+                if p == m["from"]:
+                    return m["to"]
+                if p.startswith(m["from"] + "/"):
+                    return m["to"] + p[len(m["from"]):]
+            return p
+        with self._lock:
+            doc = self._load()
+            changed = False
+            for kind in STATE_KINDS:
+                new = {remap(k): v for k, v in doc[kind].items()}
+                if new != doc[kind]:
+                    doc[kind], changed = new, True
+            last = doc["last"]
+            if last:
+                path, folder = remap(last["path"]), remap(last.get("folder", ""))
+                if (path, folder) != (last["path"], last.get("folder", "")):
+                    doc["last"], changed = {**last, "path": path, "folder": folder}, True
+            if changed:
+                try:
+                    self._save(doc)
+                except HTTPException:
+                    pass  # o arquivo já foi movido; o progresso local (navegador) também é migrado
+
+
+STATE = LibraryState()
+
+
+# --------------------------------------------------------------------------- #
 # Envio de arquivos com suporte a HTTP Range (seek suave em vídeos)
 # --------------------------------------------------------------------------- #
 
@@ -1124,7 +1267,7 @@ def api_list(path: str = ""):
         "breadcrumbs": crumbs, "siblings": siblings, "parent": parent,
         "dirs": dirs, "media": media, "docs": docs, "images": images, "others": others,
         "hub": {"title": hub_title(), "root": str(ROOT), "writable": not READ_ONLY, "auth": AUTH_TOKEN is not None,
-                "media": {"duration": MEDIA.ffprobe is not None, "thumbs": MEDIA.ffmpeg is not None}},
+                "media": {"duration": MEDIA.ffprobe is not None, "thumbs": MEDIA.ffmpeg is not None}, "state": True},
     }
 
 
@@ -1442,6 +1585,7 @@ def api_rename(request: Request, body: RenameBody):
                 moved.append({"from": join_rel(parent_rel, s.name), "to": join_rel(parent_rel, new_sub)})
             except HTTPException:
                 pass  # legenda com conflito de nome fica como está
+    STATE.migrate(moved)
     fs_changed()
     return {"moved": moved}
 
@@ -1472,8 +1616,10 @@ def api_move(request: Request, body: MoveBody):
                 moved.append({"from": join_rel(parent_of(rel), p.name), "to": join_rel(dest_rel, p.name)})
     except HTTPException as exc:
         if moved:
+            STATE.migrate(moved)
             return partial(exc, "moved", moved)
         raise
+    STATE.migrate(moved)
     fs_changed()
     return {"moved": moved}
 
@@ -1778,6 +1924,39 @@ def api_subtitle(path: str):
     elif not text.lstrip().startswith("WEBVTT"):
         text = "WEBVTT\n\n" + text
     return Response(text, media_type="text/vtt; charset=utf-8")
+
+
+class StatePatch(BaseModel):
+    watched: dict[str, float | None] = {}
+    pos: dict[str, float | None] = {}
+    favs: dict[str, float | None] = {}
+    last: dict | None = None
+    merge: bool = False
+
+
+@app.get("/api/state")
+def api_state(rev: int | None = None):
+    """Progresso compartilhado. Com ?rev=N igual ao atual, responde só {"unchanged": true}."""
+    doc = STATE.get()
+    lib = hashlib.sha1(str(ROOT).encode()).hexdigest()[:12]  # identifica a biblioteca (importação única)
+    if rev is not None and rev == doc["rev"]:
+        return {"id": lib, "rev": rev, "unchanged": True}
+    return {"id": lib, **doc}
+
+
+@app.patch("/api/state")
+def api_state_patch(request: Request, body: StatePatch):
+    # Progresso não é edição da biblioteca: vale também com --read-only.
+    check_origin(request)
+    if not request.headers.get("content-type", "").lower().startswith("application/json"):
+        raise HTTPException(415, "Use Content-Type: application/json")
+    delta = body.model_dump(include={"watched", "pos", "favs"})
+    if sum(len(v) for v in delta.values()) > 50000 or any(len(k) > 4096 for v in delta.values() for k in v):
+        raise HTTPException(413, tr("Mudanças demais de uma vez", "Too many changes at once"))
+    if "last" in body.model_fields_set:
+        delta["last"] = body.last
+    before, after = STATE.patch(delta, body.merge)
+    return {"rev": after, "prev": before}
 
 
 @app.get("/api/durations")

@@ -11,6 +11,8 @@ tags = Active Directory, Pentest, Windows, Kerberos
 # Sem "banner", o app usa banner.*/cover.*/capa.* da pasta, ou um gradiente.
 banner = banner.jpg
 # banner = https://exemplo.com/capa.png
+# banner = none                  # sem capa (desliga a detecção automática)
+# banner_pos = 30               # enquadramento vertical da capa: 0 = topo, 50 = centro, 100 = base
 
 # Opcionais
 # status = Em andamento          # rótulo fixo no card (senão é calculado pelo progresso)

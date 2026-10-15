@@ -54,23 +54,27 @@ title = Active Directory Exploitation
 description = Anotações e aulas sobre exploração em ambientes AD.
 ```
 
-Campos extras: `status`, `color`, `order`, `hidden`. Sem `banner`, o app procura
-`banner.*`, `cover.*` ou `capa.*` na pasta e, se não houver, gera um gradiente.
+Campos extras: `status`, `color`, `order`, `hidden`, `banner_pos` (enquadramento vertical da capa, 0–100)
+e `banner = none` (sem capa). Sem `banner`, o app procura `banner.*`, `cover.*` ou `capa.*` na pasta e,
+se não houver, gera um gradiente.
 Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 
 ## Funcionalidades
 
-- **Dashboard:** seção de fixados, grid de cards (capa, título, contagem de aulas/materiais/pastas, tags, status), filtro por tags (mais de uma tag combina com E), e um atalho "Continuar assistindo".
+- **Dashboard:** seção de favoritos, grid de cards (capa, título, contagem de aulas/materiais/pastas, tags, status), filtro por tags (mais de uma tag combina com E), e um atalho "Continuar assistindo".
 - **Navegação:** breadcrumbs, pills para pastas irmãs, módulos (subpastas) com progresso. As URLs ficam no hash (`#/Curso/Modulo?play=aula.mp4`), então voltar, avançar e favoritos funcionam.
 - **Vídeos** (`.mp4 .mkv .webm .mov .m4v`) e áudios: lista com título limpo (`03 - Kerberoasting_avancado.mp4` vira **03** Kerberoasting avancado). O player só é criado quando você clica (um vídeo por vez) e traz PiP, tela cheia, velocidade, anterior/próxima, autoplay da próxima e retomada de onde parou. A aula é marcada como assistida aos 90%. Legendas `.srt`/`.vtt` com o mesmo nome (`aula.pt-BR.srt`) são carregadas automaticamente.
 - **Materiais:** PDF no visualizador do navegador; código (`.asm .py .sh .c .ps1 …`) com syntax highlighting e numeração de linhas; Markdown renderizado (com imagens relativas); botões de copiar, abrir em nova aba e baixar.
 - **Busca** (`/` ou `Ctrl+K`): ignora acentos e maiúsculas e procura em pastas, aulas, arquivos e tags. Dá para restringir à pasta atual. `Enter` abre o primeiro resultado e as setas navegam.
-- **Progresso:** fica salvo no `localStorage` do navegador. Nada é gravado nas suas pastas.
+- **Favoritos:** a estrela nos cards, nos módulos e no cabeçalho da pasta favorita qualquer pasta. As favoritas (e as com `pinned = true`) aparecem primeiro na raiz, nos módulos e nas pills de pastas irmãs.
+- **Editar capa:** o botão "Editar capa" no cabeçalho de uma pasta permite enviar uma imagem (escolher, arrastar ou colar com Ctrl+V), usar uma URL, remover a capa e ajustar o enquadramento vertical. A imagem é salva como `banner.<ext>` na pasta e o `course.conf` é atualizado. A capa anterior não é apagada: vira `.<nome>.bak`, oculto no hub.
+- **Progresso e favoritos:** ficam salvos no `localStorage` do navegador. A única coisa que o app grava nas suas pastas é a capa editada pela interface (`banner.*` e `course.conf`).
 
 ## Segurança
 
 - Escuta só em `127.0.0.1` por padrão e rejeita `Host` desconhecido (proteção contra DNS rebinding).
 - Bloqueia `../`, caminhos absolutos, arquivos ocultos (`.algo`) e symlinks para fora da raiz (a menos que você use `--follow-symlinks`).
+- As rotas que gravam (`PUT`/`PATCH`/`DELETE`) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode trocar capas.
 - `.html`/`.js`/`.xml` são servidos como texto puro e `.svg` com CSP `sandbox`, para que nenhum material execute script na origem do app.
 
 ## Observações
@@ -89,5 +93,8 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 | `GET /api/banner?path=` | Capa da pasta |
 | `GET /api/text?path=` | Conteúdo de texto/código (até 2 MB) |
 | `GET /api/subtitle?path=` | Legenda convertida para WebVTT |
+| `PUT /api/banner?path=` | Envia uma nova capa (corpo = imagem; JPG, PNG, WebP, GIF ou AVIF, até 15 MB) |
+| `DELETE /api/banner?path=` | Remove a capa (`banner = none`; o arquivo vira `.bak`) |
+| `PATCH /api/conf?path=` | Altera `banner` (URL http/https) e/ou `banner_pos` (0–100) no `course.conf`; JSON |
 | `POST /api/refresh` | Reconstrói o índice |
 | `GET /api/docs` | Documentação interativa (Swagger) |

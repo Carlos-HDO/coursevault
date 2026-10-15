@@ -24,11 +24,12 @@ import unicodedata
 import webbrowser
 from email.utils import formatdate
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 # --------------------------------------------------------------------------- #
 # Configuração
@@ -47,6 +48,7 @@ ALLOWED_HOSTS: set[str] | None = set(LOOPBACK)
 
 CHUNK_SIZE = 1024 * 1024          # 1 MiB por bloco no streaming
 MAX_TEXT_BYTES = 2 * 1024 * 1024  # limite de pré-visualização de texto/código
+MAX_BANNER_BYTES = 15 * 1024 * 1024  # limite do upload de capa
 MAX_DEPTH = 24
 SEARCH_LIMIT = 200
 
@@ -72,6 +74,7 @@ BANNER_STEMS = {"banner", "cover", "capa", "poster", "folder"}
 IGNORED_NAMES = {"__pycache__", "node_modules", "$RECYCLE.BIN", "System Volume Information",
                  "Thumbs.db", "desktop.ini"}
 TRUE_VALUES = {"1", "true", "yes", "y", "sim", "s", "on"}
+NO_BANNER_VALUES = {"none", "off", "false", "no", "nao", "não", "0"}
 
 for _ext, _mime in {
     ".mp4": "video/mp4", ".m4v": "video/mp4", ".mkv": "video/x-matroska", ".webm": "video/webm",
@@ -300,6 +303,8 @@ def parse_tags(value: str) -> list[str]:
 
 def _find_banner(d: Path, raw: str | None, names: list[str]) -> tuple[str | None, Path | None, str | None]:
     """Retorna (valor externo, arquivo local, nome do arquivo dentro da pasta)."""
+    if raw and raw.strip().lower() in NO_BANNER_VALUES:  # "banner = none" desliga a autodetecção
+        return None, None, None
     if raw:
         if re.match(r"^(https?:)?//|^data:image/", raw, re.I):
             return raw, None, None
@@ -352,6 +357,10 @@ def load_conf(d: Path, rel: str) -> dict:
         order = float(raw["order"]) if raw.get("order") else None
     except ValueError:
         order = None
+    try:
+        banner_pos = min(100.0, max(0.0, float(raw["banner_pos"]))) if raw.get("banner_pos") else None
+    except ValueError:
+        banner_pos = None
 
     conf = {
         "title": raw.get("title") or None,
@@ -363,6 +372,7 @@ def load_conf(d: Path, rel: str) -> dict:
         "color": raw.get("color") or None,
         "order": order,
         "banner": banner_url,
+        "banner_pos": banner_pos,
         "has_conf": conf_file is not None,
         "_banner_file": banner_file,
         "_banner_name": banner_name,
@@ -373,12 +383,80 @@ def load_conf(d: Path, rel: str) -> dict:
 
 def _empty_conf() -> dict:
     return {"title": None, "description": None, "tags": [], "pinned": False, "hidden": False,
-            "status": None, "color": None, "order": None, "banner": None, "has_conf": False,
-            "_banner_file": None, "_banner_name": None}
+            "status": None, "color": None, "order": None, "banner": None, "banner_pos": None,
+            "has_conf": False, "_banner_file": None, "_banner_name": None}
 
 
 def public_conf(conf: dict) -> dict:
     return {k: v for k, v in conf.items() if not k.startswith("_")}
+
+
+def update_conf(d: Path, updates: dict[str, str | None]) -> None:
+    """Grava chaves no course.conf da pasta (cria o arquivo se não existir), trocando
+    as linhas existentes no lugar e preservando comentários e demais chaves.
+    Valor None remove a chave."""
+    conf_file = next((d / n for n in CONF_NAMES if (d / n).is_file()), d / CONF_NAMES[0])
+    try:
+        lines = decode_bytes(conf_file.read_bytes()).splitlines() if conf_file.is_file() else []
+    except OSError as exc:
+        raise HTTPException(500, f"Não foi possível ler o {conf_file.name}: {exc.strerror}") from None
+    pending = dict(updates)
+    out: list[str] = []
+    for line in lines:
+        m = _CONF_LINE.match(line.strip())
+        key = m.group(1).lower().replace("-", "_") if m else None
+        if key not in updates:
+            out.append(line)
+            continue
+        if key in pending:  # a primeira ocorrência é substituída; repetições somem
+            value = pending.pop(key)
+            if value is not None:
+                out.append(f"{key} = {_conf_value(value)}")
+    out.extend(f"{k} = {_conf_value(v)}" for k, v in pending.items() if v is not None)
+    atomic_write(d, conf_file.name, ("\n".join(out) + "\n").encode("utf-8"))
+    _conf_cache.pop(str(d), None)
+
+
+def _conf_value(v: str) -> str:
+    return f'"{v}"' if "#" in v or ";" in v else v
+
+
+def atomic_write(d: Path, name: str, data: bytes) -> None:
+    tmp = d / f".{name}.tmp"
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, d / name)
+    except OSError as exc:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise HTTPException(500, f"Não foi possível gravar {name}: {exc.strerror}") from None
+
+
+def backup_file(d: Path, name: str) -> None:
+    """Renomeia o arquivo para .<nome>.bak (oculto no hub) em vez de apagá-lo."""
+    try:
+        os.replace(d / name, d / f".{name}.bak")
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise HTTPException(500, f"Não foi possível mover {name}: {exc.strerror}") from None
+
+
+def sniff_image(head: bytes) -> str | None:
+    """Extensão a partir dos magic bytes (SVG fica de fora de propósito)."""
+    if head.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis", b"mif1"):
+        return ".avif"
+    return None
 
 
 def dir_sort_key(item: dict) -> tuple:
@@ -709,6 +787,98 @@ def api_banner(request: Request, path: str = ""):
     if banner is None or ext_of(banner.name) not in IMAGE_EXT:
         raise HTTPException(404, "Sem banner")
     return send_file(banner, request)
+
+
+# --- Escrita (editor de capa) ---------------------------------------------- #
+# As rotas usam PUT/PATCH/DELETE: o navegador exige preflight CORS para elas, então
+# outro site não consegue chamá-las. O Origin é conferido como segunda barreira.
+
+def check_write(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if origin and urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+        raise HTTPException(403, "Origem não permitida")
+
+
+def writable_dir(path: str) -> tuple[Path, str]:
+    d, rel = safe_path(path)
+    if not rel or not d.is_dir():
+        raise HTTPException(400, "Escolha a pasta de um curso")
+    return d, rel
+
+
+def _save_banner(d: Path, rel: str, data: bytes, ext: str) -> dict:
+    name = "banner" + ext
+    current = load_conf(d, rel)["_banner_name"]
+    for old in {current, name}:
+        if old and (d / old).exists():
+            backup_file(d, old)
+    atomic_write(d, name, data)
+    update_conf(d, {"banner": name})
+    return public_conf(load_conf(d, rel))
+
+
+def _set_conf(d: Path, rel: str, updates: dict[str, str | None]) -> dict:
+    if "banner" in updates:  # a capa local deixa de ser usada: guarda como .bak
+        current = load_conf(d, rel)["_banner_name"]
+        if current:
+            backup_file(d, current)
+    update_conf(d, updates)
+    return public_conf(load_conf(d, rel))
+
+
+@app.put("/api/banner")
+async def api_banner_put(request: Request, path: str):
+    check_write(request)
+    d, rel = writable_dir(path)
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declared = 0
+    if declared > MAX_BANNER_BYTES:
+        raise HTTPException(413, "Imagem maior que 15 MB")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > MAX_BANNER_BYTES:
+            raise HTTPException(413, "Imagem maior que 15 MB")
+    ext = sniff_image(bytes(buf[:16]))
+    if not ext:
+        raise HTTPException(415, "Formato não suportado (use JPG, PNG, WebP, GIF ou AVIF)")
+    return await run_in_threadpool(_save_banner, d, rel, bytes(buf), ext)
+
+
+@app.patch("/api/conf")
+async def api_conf_patch(request: Request, path: str):
+    check_write(request)
+    d, rel = writable_dir(path)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON inválido") from None
+    if not isinstance(body, dict) or not body or set(body) - {"banner", "banner_pos"}:
+        raise HTTPException(400, "Campos permitidos: banner, banner_pos")
+    updates: dict[str, str | None] = {}
+    if "banner" in body:
+        url = body["banner"]
+        if not isinstance(url, str) or len(url) > 2000 or not re.fullmatch(r"https?://[^\s\"'<>]+", url, re.I):
+            raise HTTPException(400, "URL inválida (use http:// ou https://)")
+        updates["banner"] = url
+    if "banner_pos" in body:
+        pos = body["banner_pos"]
+        if pos is None:
+            updates["banner_pos"] = None
+        elif isinstance(pos, (int, float)) and not isinstance(pos, bool) and 0 <= pos <= 100:
+            updates["banner_pos"] = f"{round(pos, 1):g}"
+        else:
+            raise HTTPException(400, "banner_pos deve ser um número de 0 a 100")
+    return await run_in_threadpool(_set_conf, d, rel, updates)
+
+
+@app.delete("/api/banner")
+def api_banner_delete(request: Request, path: str):
+    check_write(request)
+    d, rel = writable_dir(path)
+    return _set_conf(d, rel, {"banner": "none", "banner_pos": None})
 
 
 @app.get("/api/text")

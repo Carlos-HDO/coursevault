@@ -14,21 +14,25 @@ segundos (--ttl) para não varrer a árvore inteira a cada requisição.
 from __future__ import annotations
 
 import argparse
+import errno
 import math
 import mimetypes
 import os
 import re
+import shutil
 import threading
 import time
 import unicodedata
 import webbrowser
+from datetime import datetime
 from email.utils import formatdate
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 # --------------------------------------------------------------------------- #
@@ -41,6 +45,8 @@ APP_FILES = {"server.py", "index.html", "requirements.txt", "course.conf.example
 
 ROOT: Path = Path(os.environ.get("HUB_ROOT", os.getcwd())).expanduser().resolve()
 FOLLOW_SYMLINKS = os.environ.get("HUB_FOLLOW_SYMLINKS") == "1"
+READ_ONLY = os.environ.get("HUB_READ_ONLY") == "1"
+TRASH_DIR = ".lixeira"  # oculto no hub (começa com ponto)
 HIDE_APP_FILES = APP_DIR == ROOT
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 # None = aceita qualquer Host (modo LAN). Protege contra DNS rebinding em modo local.
@@ -476,6 +482,10 @@ class TreeIndex:
         self._entries: list[dict] | None = None
         self._stats: dict[str, dict[str, int]] = {}
 
+    def invalidate(self) -> None:
+        with self._lock:
+            self._entries = None
+
     def snapshot(self, force: bool = False) -> tuple[list[dict], dict[str, dict[str, int]]]:
         with self._lock:
             if force or self._entries is None or time.monotonic() - self._built > self.ttl:
@@ -734,13 +744,7 @@ def api_list(path: str = ""):
     others.extend(s for s in subs if s["path"] not in used)
     dirs.sort(key=dir_sort_key)
 
-    crumbs = [{"title": hub_title(), "path": ""}]
-    acc: list[str] = []
-    for part in rel.split("/") if rel else []:
-        acc.append(part)
-        p = "/".join(acc)
-        crumbs.append({"title": load_conf(ROOT.joinpath(*acc), p)["title"] or part, "path": p})
-
+    crumbs = breadcrumbs(rel)
     siblings, parent = [], None
     if rel:
         parent = rel.rsplit("/", 1)[0] if "/" in rel else ""
@@ -763,8 +767,51 @@ def api_list(path: str = ""):
         "conf": public_conf(conf), "stats": stats.get(rel) or quick_stats(d),
         "breadcrumbs": crumbs, "siblings": siblings, "parent": parent,
         "dirs": dirs, "media": media, "docs": docs, "images": images, "others": others,
-        "hub": {"title": hub_title(), "root": str(ROOT)},
+        "hub": {"title": hub_title(), "root": str(ROOT), "writable": not READ_ONLY},
     }
+
+
+def breadcrumbs(rel: str) -> list[dict]:
+    crumbs = [{"title": hub_title(), "path": ""}]
+    acc: list[str] = []
+    for part in rel.split("/") if rel else []:
+        acc.append(part)
+        p = "/".join(acc)
+        crumbs.append({"title": load_conf(ROOT.joinpath(*acc), p)["title"] or part, "path": p})
+    return crumbs
+
+
+@app.get("/api/tree")
+def api_tree(path: str = ""):
+    """Subpastas de uma pasta (navegador de pastas do "Mover para…")."""
+    d, rel = safe_path(path)
+    if not d.is_dir():
+        raise HTTPException(404, "Pasta não encontrada")
+    dirs = []
+    try:
+        with os.scandir(d) as it:
+            for e in it:
+                if not (visible_entry(e, rel) and entry_is_dir(e)):
+                    continue
+                child = join_rel(rel, e.name)
+                conf = load_conf(Path(e.path), child)
+                if conf["hidden"]:
+                    continue
+                dirs.append({"name": e.name, "path": child, "title": conf["title"] or e.name,
+                             "has_dirs": _has_subdirs(Path(e.path), child)})
+    except OSError as exc:
+        raise HTTPException(500, f"Não foi possível ler a pasta: {exc.strerror}") from None
+    dirs.sort(key=lambda x: natural_key(x["name"]))
+    crumbs = breadcrumbs(rel)
+    return {"path": rel, "title": crumbs[-1]["title"], "breadcrumbs": crumbs, "dirs": dirs}
+
+
+def _has_subdirs(d: Path, rel: str) -> bool:
+    try:
+        with os.scandir(d) as it:
+            return any(visible_entry(e, rel) and entry_is_dir(e) for e in it)
+    except OSError:
+        return False
 
 
 @app.get("/api/search")
@@ -793,10 +840,14 @@ def api_banner(request: Request, path: str = ""):
 # As rotas usam PUT/PATCH/DELETE: o navegador exige preflight CORS para elas, então
 # outro site não consegue chamá-las. O Origin é conferido como segunda barreira.
 
-def check_write(request: Request) -> None:
+def check_write(request: Request, json_body: bool = False) -> None:
+    if READ_ONLY:
+        raise HTTPException(403, "Hub em modo somente leitura (--read-only)")
     origin = request.headers.get("origin")
     if origin and urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
         raise HTTPException(403, "Origem não permitida")
+    if json_body and not request.headers.get("content-type", "").lower().startswith("application/json"):
+        raise HTTPException(415, "Use Content-Type: application/json")
 
 
 def writable_dir(path: str) -> tuple[Path, str]:
@@ -881,6 +932,219 @@ def api_banner_delete(request: Request, path: str):
     return _set_conf(d, rel, {"banner": "none", "banner_pos": None})
 
 
+# --- Escrita (organizar pastas e arquivos) --------------------------------- #
+
+_BAD_NAME = re.compile(r'[\\/<>:"|?*\x00-\x1f]')
+
+
+class MkdirBody(BaseModel):
+    parent: str = ""
+    name: str
+
+
+class RenameBody(BaseModel):
+    path: str
+    name: str
+
+
+class MoveBody(BaseModel):
+    paths: list[str]
+    dest: str = ""
+
+
+class TrashBody(BaseModel):
+    paths: list[str]
+
+
+def valid_name(name: str) -> str:
+    name = unicodedata.normalize("NFC", name.strip())
+    if not name or name in (".", "..") or name.startswith("."):
+        raise HTTPException(400, "Nome inválido: não pode ficar vazio nem começar com ponto")
+    if _BAD_NAME.search(name):
+        raise HTTPException(400, 'O nome não pode conter / \\ < > : " | ? *')
+    if name.endswith("."):
+        raise HTTPException(400, "O nome não pode terminar com ponto")
+    if len(name.encode("utf-8")) > 255:
+        raise HTTPException(400, "Nome longo demais")
+    if name in CONF_NAMES or name in IGNORED_NAMES:
+        raise HTTPException(400, "Nome reservado")
+    return name
+
+
+def item_path(path: str) -> tuple[Path, str]:
+    """Item que pode ser renomeado/movido/excluído (nunca a raiz nem os arquivos do app)."""
+    p, rel = safe_path(path)
+    if not rel:
+        raise HTTPException(400, "A raiz dos cursos não pode ser alterada")
+    if HIDE_APP_FILES and "/" not in rel and rel in APP_FILES:
+        raise HTTPException(403, "Arquivo do próprio Hub")
+    return p, rel
+
+
+def parent_of(rel: str) -> str:
+    return rel.rsplit("/", 1)[0] if "/" in rel else ""
+
+
+def companions(p: Path) -> list[Path]:
+    """Legendas que pertencem a um vídeo/áudio (aula.srt, aula.pt-BR.vtt). Se houver
+    outra mídia com nome mais específico (aula.parte2.mp4), a legenda fica com ela."""
+    if classify(p.name) not in ("video", "audio") or not p.is_file():
+        return []
+    try:
+        names = os.listdir(p.parent)
+    except OSError:
+        return []
+    stem = os.path.splitext(p.name)[0]
+    media_stems = [os.path.splitext(n)[0] for n in names if classify(n) in ("video", "audio")]
+    out = []
+    for n in names:
+        if ext_of(n) not in SUB_EXT:
+            continue
+        s = os.path.splitext(n)[0]
+        owners = [m for m in media_stems if s == m or s.startswith(m + ".")]
+        if owners and max(owners, key=len) == stem:
+            out.append(p.parent / n)
+    return out
+
+
+def _same_entry(a: Path, b: Path) -> bool:
+    try:
+        return os.path.samefile(a, b)  # renomear só trocando maiúsculas/minúsculas
+    except OSError:
+        return False
+
+
+def move_entry(src: Path, dst: Path, allow_copy: bool) -> None:
+    """Renomeia/move sem nunca sobrescrever. Entre discos diferentes só copia se permitido."""
+    if os.path.lexists(dst) and not _same_entry(src, dst):
+        raise HTTPException(409, f"Já existe “{dst.name}” no destino")
+    try:
+        os.rename(src, dst)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise HTTPException(500, f"Não foi possível mover “{src.name}”: {exc.strerror}") from None
+        if not allow_copy:
+            raise HTTPException(409, f"“{src.name}” está em outro disco; mova pelo gerenciador de arquivos") from None
+        try:
+            shutil.move(str(src), str(dst))
+        except OSError as exc2:
+            raise HTTPException(500, f"Não foi possível mover “{src.name}”: {exc2.strerror}") from None
+
+
+def fs_changed() -> None:
+    _conf_cache.clear()
+    INDEX.invalidate()
+
+
+def partial(exc: HTTPException, key: str, done: list) -> JSONResponse:
+    """Erro no meio de um lote: devolve também o que já foi feito (o front migra o progresso)."""
+    fs_changed()
+    return JSONResponse({"detail": exc.detail, key: done}, status_code=exc.status_code)
+
+
+@app.post("/api/fs/mkdir")
+def api_mkdir(request: Request, body: MkdirBody):
+    check_write(request, json_body=True)
+    parent, parent_rel = safe_path(body.parent)
+    if not parent.is_dir():
+        raise HTTPException(400, "Destino não é uma pasta")
+    name = valid_name(body.name)
+    try:
+        (parent / name).mkdir()
+    except FileExistsError:
+        raise HTTPException(409, f"Já existe “{name}” aqui") from None
+    except OSError as exc:
+        raise HTTPException(500, f"Não foi possível criar a pasta: {exc.strerror}") from None
+    fs_changed()
+    return {"path": join_rel(parent_rel, name)}
+
+
+@app.post("/api/fs/rename")
+def api_rename(request: Request, body: RenameBody):
+    check_write(request, json_body=True)
+    src, rel = item_path(body.path)
+    name = valid_name(body.name)
+    parent_rel = parent_of(rel)
+    moved: list[dict] = []
+    if name != src.name:
+        subs = companions(src)
+        move_entry(src, src.parent / name, allow_copy=False)
+        moved.append({"from": rel, "to": join_rel(parent_rel, name)})
+        old_stem, new_stem = os.path.splitext(src.name)[0], os.path.splitext(name)[0]
+        for s in subs:  # aula.pt-BR.srt -> nova.pt-BR.srt
+            new_sub = new_stem + s.name[len(old_stem):]
+            try:
+                move_entry(s, s.parent / new_sub, allow_copy=False)
+                moved.append({"from": join_rel(parent_rel, s.name), "to": join_rel(parent_rel, new_sub)})
+            except HTTPException:
+                pass  # legenda com conflito de nome fica como está
+    fs_changed()
+    return {"moved": moved}
+
+
+@app.post("/api/fs/move")
+def api_move(request: Request, body: MoveBody):
+    check_write(request, json_body=True)
+    dest, dest_rel = safe_path(body.dest)
+    if not dest.is_dir():
+        raise HTTPException(400, "Destino não é uma pasta")
+    if not body.paths or len(body.paths) > 2000:
+        raise HTTPException(400, "Nenhum item para mover")
+    items = [item_path(p) for p in body.paths]  # valida tudo antes de mexer em qualquer coisa
+    for _, rel in items:
+        if dest_rel == rel or dest_rel.startswith(rel + "/"):
+            raise HTTPException(400, f"Não dá para mover “{rel.rsplit('/', 1)[-1]}” para dentro dele mesmo")
+    moved: list[dict] = []
+    try:
+        for src, rel in items:
+            if parent_of(rel) == dest_rel or not os.path.lexists(src):
+                continue  # já está no destino, ou foi junto com a pasta/vídeo anterior
+            group = [src, *companions(src)]
+            for p in group:
+                if not os.path.lexists(p):
+                    continue
+                move_entry(p, dest / p.name, allow_copy=True)
+                moved.append({"from": join_rel(parent_of(rel), p.name), "to": join_rel(dest_rel, p.name)})
+    except HTTPException as exc:
+        if moved:
+            return partial(exc, "moved", moved)
+        raise
+    fs_changed()
+    return {"moved": moved}
+
+
+@app.post("/api/fs/trash")
+def api_trash(request: Request, body: TrashBody):
+    check_write(request, json_body=True)
+    if not body.paths or len(body.paths) > 2000:
+        raise HTTPException(400, "Nenhum item para excluir")
+    items = [item_path(p) for p in body.paths]
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    base = ROOT / TRASH_DIR / stamp
+    trashed: list[str] = []
+    try:
+        for src, rel in items:
+            if not os.path.lexists(src):
+                continue
+            for p in [src, *companions(src)]:
+                r = join_rel(parent_of(rel), p.name)
+                if not os.path.lexists(p):
+                    continue
+                dst = base.joinpath(*r.split("/"))  # preserva o caminho original
+                try:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    raise HTTPException(500, f"Não foi possível criar a lixeira: {exc.strerror}") from None
+                move_entry(p, dst, allow_copy=False)
+                trashed.append(r)
+    except HTTPException as exc:
+        if trashed:
+            return partial(exc, "trashed", trashed)
+        raise
+    fs_changed()
+    return {"trashed": trashed, "folder": f"{TRASH_DIR}/{stamp}"}
+
+
 @app.get("/api/text")
 def api_text(path: str):
     f, rel = safe_path(path)
@@ -929,7 +1193,7 @@ def index():
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
-    global FOLLOW_SYMLINKS, ALLOWED_HOSTS
+    global FOLLOW_SYMLINKS, ALLOWED_HOSTS, READ_ONLY
     ap = argparse.ArgumentParser(description="Hub de Cursos — portal local para suas pastas de cursos.")
     ap.add_argument("-r", "--root", default=os.environ.get("HUB_ROOT", "."),
                     help="pasta raiz dos cursos (padrão: pasta atual)")
@@ -941,6 +1205,8 @@ def main() -> None:
                     help="permitir links simbólicos que apontam para fora da raiz (ex.: HD externo)")
     ap.add_argument("--ttl", type=float, default=30.0,
                     help="segundos de cache do índice de busca/contagens (padrão: 30)")
+    ap.add_argument("--read-only", action="store_true",
+                    help="desativa a edição (capa, criar, renomear, mover e excluir)")
     args = ap.parse_args()
 
     root = Path(args.root).expanduser()
@@ -948,6 +1214,7 @@ def main() -> None:
         ap.error(f"pasta raiz não existe: {root}")
     set_root(root)
     FOLLOW_SYMLINKS = args.follow_symlinks
+    READ_ONLY = READ_ONLY or args.read_only
     INDEX.ttl = args.ttl
     if args.host in LOOPBACK:
         ALLOWED_HOSTS = set(LOOPBACK)

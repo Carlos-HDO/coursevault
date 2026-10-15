@@ -38,6 +38,7 @@ O navegador abre em `http://localhost:8000`.
 | `--no-browser` | Não abre o navegador automaticamente |
 | `--follow-symlinks` | Permite links simbólicos que apontam para fora da raiz (ex.: cursos em um HD externo) |
 | `--ttl 30` | Segundos de cache do índice de busca e das contagens recursivas |
+| `--read-only` | Desativa toda a edição (capa, criar, renomear, mover e excluir) |
 
 Se o `server.py` ficar dentro da própria pasta de cursos, os arquivos do app ficam ocultos no hub.
 
@@ -68,13 +69,16 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 - **Busca** (`/` ou `Ctrl+K`): ignora acentos e maiúsculas e procura em pastas, aulas, arquivos e tags. Dá para restringir à pasta atual. `Enter` abre o primeiro resultado e as setas navegam.
 - **Favoritos:** a estrela nos cards, nos módulos e no cabeçalho da pasta favorita qualquer pasta. As favoritas (e as com `pinned = true`) aparecem primeiro na raiz, nos módulos e nas pills de pastas irmãs.
 - **Editar capa:** o botão "Editar capa" no cabeçalho de uma pasta permite enviar uma imagem (escolher, arrastar ou colar com Ctrl+V), usar uma URL, remover a capa e ajustar o enquadramento vertical. A imagem é salva como `banner.<ext>` na pasta e o `course.conf` é atualizado. A capa anterior não é apagada: vira `.<nome>.bak`, oculto no hub.
-- **Progresso e favoritos:** ficam salvos no `localStorage` do navegador. A única coisa que o app grava nas suas pastas é a capa editada pela interface (`banner.*` e `course.conf`).
+- **Organizar pastas e arquivos:** cada pasta, aula e arquivo tem um menu ⋯ com **Renomear**, **Mover para…** e **Excluir**. "Nova pasta" e "Selecionar" ficam no topo da raiz e no cabeçalho de cada pasta. No modo seleção, clique nos itens e use a barra de baixo para mover ou excluir vários de uma vez. "Mover para…" abre um navegador de pastas, com busca em toda a biblioteca e opção de criar a pasta de destino ali mesmo. Legendas com o mesmo nome do vídeo acompanham o vídeo ao renomear, mover e excluir. O progresso, os favoritos e o "Continuar assistindo" seguem os itens para o novo caminho. Nada é sobrescrito: se já existir um item com o mesmo nome no destino, a operação para.
+- **Lixeira:** "Excluir" não apaga nada. O item vai para `.lixeira/<data_hora>/<caminho original>` na raiz dos cursos (oculta no hub). Para restaurar, mova o item de volta pelo gerenciador de arquivos; para liberar espaço de vez, apague a pasta `.lixeira`.
+- **Progresso e favoritos:** ficam salvos no `localStorage` do navegador. O app só mexe nas suas pastas quando você pede: editar a capa (`banner.*` e `course.conf`) ou criar, renomear, mover e excluir itens.
 
 ## Segurança
 
 - Escuta só em `127.0.0.1` por padrão e rejeita `Host` desconhecido (proteção contra DNS rebinding).
 - Bloqueia `../`, caminhos absolutos, arquivos ocultos (`.algo`) e symlinks para fora da raiz (a menos que você use `--follow-symlinks`).
-- As rotas que gravam (`PUT`/`PATCH`/`DELETE`) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode trocar capas.
+- As rotas que gravam (`PUT`/`PATCH`/`DELETE` e os `POST` de `/api/fs/*`, que exigem JSON) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode editar; use `--read-only` para impedir.
+- Nomes com `/ \ < > : " | ? *`, começando com ponto ou terminando em ponto são recusados (compatível com NTFS). A raiz, a `.lixeira` e os arquivos do app não podem ser alterados.
 - `.html`/`.js`/`.xml` são servidos como texto puro e `.svg` com CSP `sandbox`, para que nenhum material execute script na origem do app.
 
 ## Observações
@@ -96,5 +100,10 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 | `PUT /api/banner?path=` | Envia uma nova capa (corpo = imagem; JPG, PNG, WebP, GIF ou AVIF, até 15 MB) |
 | `DELETE /api/banner?path=` | Remove a capa (`banner = none`; o arquivo vira `.bak`) |
 | `PATCH /api/conf?path=` | Altera `banner` (URL http/https) e/ou `banner_pos` (0–100) no `course.conf`; JSON |
+| `GET /api/tree?path=` | Subpastas de uma pasta (navegador de pastas) |
+| `POST /api/fs/mkdir` | Cria uma pasta: `{parent, name}` |
+| `POST /api/fs/rename` | Renomeia: `{path, name}`; devolve `moved: [{from, to}]` |
+| `POST /api/fs/move` | Move vários itens: `{paths, dest}`; devolve `moved` |
+| `POST /api/fs/trash` | Move para `.lixeira`: `{paths}` |
 | `POST /api/refresh` | Reconstrói o índice |
 | `GET /api/docs` | Documentação interativa (Swagger) |

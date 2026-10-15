@@ -71,12 +71,26 @@
   .fav[data-hover]:not(.is-fav) { opacity: 0; }
   .group:hover .fav[data-hover], .fav[data-hover]:focus-visible { opacity: 1; }
   #ce-drop.is-over { border-color: #8b7cf6; background: rgba(139, 124, 246, .08); }
+  .kebab { color: #a1a1aa; cursor: pointer; transition: opacity .15s, color .15s, background-color .15s; }
+  .kebab:hover, .kebab.is-open { color: #fff; }
+  .kebab[data-hover] { opacity: 0; }
+  .group:hover .kebab[data-hover], .kebab[data-hover]:focus-visible, .kebab.is-open { opacity: 1; }
+  @media (hover: none) { .kebab[data-hover], .fav[data-hover]:not(.is-fav) { opacity: 1; } }
+  .selbox { display: none; }
+  .selecting .selbox { display: grid; }
+  .selecting .kebab, .selecting .lesson .check { display: none; }
+  .selecting [data-sel] { cursor: pointer; user-select: none; }
+  #app.selecting { padding-bottom: 7rem; }
+  .selecting [data-sel].is-selected { outline: 2px solid #8b7cf6; outline-offset: -2px; }
+  .selecting .lesson.is-selected { background: rgba(139, 124, 246, .08); }
+  .is-selected .selbox { background: #8b7cf6; border-color: #8b7cf6; color: #fff; }
+  .btn.is-on { border-color: rgba(139, 124, 246, .6); background: rgba(139, 124, 246, .18); color: #fff; }
 </style>
 
 <style type="text/tailwindcss">
   @layer components {
     .btn { @apply inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-ink-700 bg-ink-800 text-zinc-300 text-xs font-medium hover:bg-ink-700 hover:text-white transition disabled:opacity-40 disabled:pointer-events-none; }
-    .btn-primary { @apply inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-deep transition shadow-lg shadow-accent/20; }
+    .btn-primary { @apply inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-deep transition shadow-lg shadow-accent/20 disabled:opacity-40 disabled:pointer-events-none disabled:shadow-none; }
     .ibtn { @apply inline-grid place-items-center w-8 h-8 rounded-md text-zinc-400 hover:text-white hover:bg-ink-700 transition; }
     .section-title { @apply flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-400; }
     .count { @apply ml-1 rounded-full bg-ink-700 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 tracking-normal; }
@@ -133,7 +147,17 @@
   </div>
 </div>
 
-<div id="toast" class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-lg border border-ink-600 bg-ink-800/95 px-4 py-2.5 text-sm text-zinc-200 shadow-xl opacity-0 translate-y-2 pointer-events-none transition duration-200"></div>
+<div id="menu" role="menu" class="fixed z-[55] hidden min-w-[190px] rounded-lg border border-ink-600 bg-ink-850 p-1 shadow-2xl shadow-black/60"></div>
+
+<div id="selbar" class="fixed bottom-5 left-1/2 z-40 hidden w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-ink-600 bg-ink-850/95 px-3 py-2 shadow-2xl shadow-black/60 backdrop-blur">
+  <span id="sel-count" class="mr-1 text-sm font-medium text-zinc-200 tabular-nums"></span>
+  <button class="btn" data-action="sel-all">Selecionar tudo</button>
+  <button class="btn" data-action="sel-move" data-needs-sel></button>
+  <button class="btn text-red-300 hover:text-red-200" data-action="sel-trash" data-needs-sel></button>
+  <button class="btn" data-action="sel-cancel">Cancelar</button>
+</div>
+
+<div id="toast"class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-lg border border-ink-600 bg-ink-800/95 px-4 py-2.5 text-sm text-zinc-200 shadow-xl opacity-0 translate-y-2 pointer-events-none transition duration-200"></div>
 
 <script>
 'use strict';
@@ -191,12 +215,13 @@ function go(path, params) {
 async function api(url, opts) {
   const r = await fetch(url, opts);
   if (!r.ok) {
-    let msg = `${r.status} ${r.statusText}`;
-    try { const j = await r.json(); if (j.detail) msg = j.detail; } catch {}
-    throw new Error(msg);
+    let msg = `${r.status} ${r.statusText}`, data = null;
+    try { data = await r.json(); if (typeof data.detail === 'string') msg = data.detail; } catch {}
+    throw Object.assign(new Error(msg), { data });
   }
   return r.json();
 }
+const postJSON = (url, body) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
@@ -263,6 +288,11 @@ const ICONS = {
   upload: '<path d="M12 16V4m0 0-4 4m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
   link: '<path d="M10 14a4.5 4.5 0 0 0 6.36 0l3-3a4.5 4.5 0 0 0-6.36-6.36l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.36 0l-3 3a4.5 4.5 0 0 0 6.36 6.36l1-1"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  dots: '<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>',
+  folderPlus: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/>',
+  move: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 13h6m-2-2 2 2-2 2"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  checksq: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/>',
 };
 const icon = (n, cls = 'w-4 h-4') =>
   `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
@@ -288,7 +318,33 @@ const S = {
   activeTags: new Set(),
   query: '', scopeLocal: false, results: [], searchSeq: 0,
   playing: -1, modalText: '', coverEdit: null,
+  selecting: false, sel: new Set(), menuPath: null, formSubmit: null, picker: null,
 };
+const canWrite = () => !S.data || S.data.hub.writable !== false;
+
+// Renomear/mover muda os caminhos: leva junto progresso, posição, favoritos e "continuar".
+function migratePaths(moved) {
+  if (!moved || !moved.length) return;
+  const remap = p => {
+    for (const { from, to } of moved) {
+      if (p === from) return to;
+      if (p.startsWith(from + '/')) return to + p.slice(from.length);
+    }
+    return p;
+  };
+  for (const obj of [watched, positions, favs]) {
+    for (const k of Object.keys(obj)) {
+      const n = remap(k);
+      if (n !== k) { obj[n] = obj[k]; delete obj[k]; }
+    }
+  }
+  store.set('watched', watched); store.set('pos', positions); store.set('favs', favs);
+  const last = store.get('last', null);
+  if (last && last.path) {
+    const path = remap(last.path), folder = remap(last.folder || '');
+    if (path !== last.path || folder !== last.folder) store.set('last', { ...last, path, folder });
+  }
+}
 
 function watchedCount(prefix) {
   if (!prefix) return Object.keys(watched).length;
@@ -363,6 +419,16 @@ function favBtn(path, cls = '', iconCls = 'w-3.5 h-3.5', hover = false) {
   return `<button type="button" class="fav inline-grid place-items-center shrink-0 rounded-full ${on ? 'is-fav' : ''} ${cls}" data-fav="${esc(path)}"${hover ? ' data-hover' : ''}
     title="${on ? 'Remover dos favoritos' : 'Favoritar'}" aria-pressed="${on}">${icon('star', iconCls + ' fav-off')}${icon('starFill', iconCls + ' fav-on')}</button>`;
 }
+// <span role=button>: pode ficar dentro de <a>/<button> (cards, tiles de imagem) sem quebrar o HTML.
+function kebab(path, cls = '', hover = true) {
+  if (!canWrite()) return '';
+  return `<span role="button" tabindex="0" aria-haspopup="menu" title="Mais ações" data-menu="${esc(path)}"${hover ? ' data-hover' : ''}
+    class="kebab inline-grid place-items-center shrink-0 ${cls}">${icon('dots', 'w-4 h-4')}</span>`;
+}
+const selbox = () => canWrite()
+  ? `<span class="selbox place-items-center w-5 h-5 shrink-0 rounded-md border border-zinc-500 bg-ink-900/80 text-transparent" aria-hidden="true">${icon('check', 'w-3 h-3')}</span>`
+  : '';
+const selAttr = path => canWrite() ? ` data-sel="${esc(path)}"` : '';
 function tagChip(t, count) {
   return `<button type="button" data-tag="${esc(t)}" class="tag ${S.activeTags.has(t) ? 'is-active' : ''}" style="--h:${hue(t)}">
     ${esc(t)}${count != null ? `<span class="ml-1.5 opacity-60">${count}</span>` : ''}</button>`;
@@ -390,16 +456,20 @@ function statusChip(conf, p) {
 
 function courseCard(d) {
   const c = d.conf, st = d.stats, p = progress(d.path, st.media);
-  return `<article class="card group" data-nav="${esc(d.path)}" tabindex="0">
+  return `<article class="card group" data-nav="${esc(d.path)}"${selAttr(d.path)} tabindex="0">
     <div class="relative aspect-[16/8] overflow-hidden">
       ${cover(d)}
       <div class="absolute inset-0 bg-gradient-to-t from-ink-850 via-transparent to-transparent"></div>
       <div class="absolute top-3 left-3 right-3 flex justify-between items-start gap-2">
         <div class="flex items-center gap-1.5">
+          ${selbox()}
           ${favBtn(d.path, 'w-7 h-7 bg-black/50 backdrop-blur hover:bg-black/70', 'w-3.5 h-3.5', true)}
           ${c.pinned ? `<span class="inline-grid place-items-center w-6 h-6 rounded-full bg-black/50 text-accent-soft backdrop-blur" title="Fixado">${icon('pin', 'w-3.5 h-3.5')}</span>` : ''}
         </div>
-        ${statusChip(c, p)}
+        <div class="flex items-center gap-1.5">
+          ${statusChip(c, p)}
+          ${kebab(d.path, 'w-7 h-7 rounded-full bg-black/50 backdrop-blur hover:bg-black/70')}
+        </div>
       </div>
     </div>
     <div class="flex flex-1 flex-col gap-3 p-4 pt-3">
@@ -422,8 +492,8 @@ function moduleCard(d, i) {
     : `<span class="grid place-items-center w-12 h-12 rounded-lg shrink-0 font-mono text-sm font-semibold"
          style="color:hsl(${h} 70% 78%);background:hsl(${h} 45% 45% / .14);border:1px solid hsl(${h} 50% 60% / .2)">
          ${lab.num ? esc(lab.num) : icon('folder', 'w-5 h-5')}</span>`;
-  return `<a href="${hashFor(d.path)}" class="group flex items-center gap-3 p-3 rounded-xl border border-ink-700 bg-ink-850 hover:border-accent/50 hover:bg-ink-800 transition">
-    ${thumb}
+  return `<a href="${hashFor(d.path)}"${selAttr(d.path)} class="group flex items-center gap-3 p-3 rounded-xl border border-ink-700 bg-ink-850 hover:border-accent/50 hover:bg-ink-800 transition">
+    ${selbox()}${thumb}
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-1.5">
         ${d.conf.pinned ? `<span class="text-accent-soft">${icon('pin', 'w-3 h-3')}</span>` : ''}
@@ -432,6 +502,7 @@ function moduleCard(d, i) {
       ${metaLine(st, 'text-[11px] mt-0.5')}
       ${st.media ? progBar(d.path, st.media, 'h-[3px] mt-2') : ''}
     </div>
+    ${kebab(d.path, 'w-7 h-7 rounded-full hover:bg-ink-700')}
     ${favBtn(d.path, 'w-7 h-7 hover:bg-ink-700', 'w-3.5 h-3.5', true)}
     <span class="text-zinc-600 group-hover:text-zinc-300 transition">${icon('chevron')}</span>
   </a>`;
@@ -439,8 +510,9 @@ function moduleCard(d, i) {
 
 function lessonRow(m, i) {
   const pos = positions[m.path];
-  return `<div class="lesson ${watched[m.path] ? 'is-watched' : ''}" data-row="${i}" data-watch="${esc(m.path)}">
-    <div class="flex items-center gap-3 px-3 sm:px-4 py-2.5 hover:bg-white/[.02]">
+  return `<div class="lesson ${watched[m.path] ? 'is-watched' : ''}" data-row="${i}" data-watch="${esc(m.path)}"${selAttr(m.path)}>
+    <div class="group flex items-center gap-3 px-3 sm:px-4 py-2.5 hover:bg-white/[.02]">
+      ${selbox()}
       <button class="check" data-action="toggle-watched" data-i="${i}" title="Marcar como assistida">${icon('check', 'w-3 h-3')}</button>
       <button class="flex flex-1 min-w-0 items-center gap-3 text-left" data-action="play" data-i="${i}">
         <span class="lesson-num">${esc(m.num || String(i + 1).padStart(2, '0'))}</span>
@@ -452,6 +524,7 @@ function lessonRow(m, i) {
         <span class="badge">${esc(m.ext.slice(1))}</span>
         <span class="w-16 text-right tabular-nums">${fmtSize(m.size)}</span>
       </span>
+      ${kebab(m.path, 'w-8 h-8 rounded-md hover:bg-ink-700')}
       <button class="ibtn text-zinc-300" data-action="play" data-i="${i}" title="Reproduzir">${icon(m.kind === 'audio' ? 'music' : 'play', 'w-4 h-4')}</button>
     </div>
   </div>`;
@@ -468,7 +541,8 @@ function fileIcon(f) {
 function fileTile(f, list, i) {
   const ext = (f.ext || '').slice(1) || 'txt';
   return `<div class="group flex items-center gap-3 p-3 rounded-xl border border-ink-700 bg-ink-850 hover:border-accent/50 hover:bg-ink-800 transition cursor-pointer"
-               data-action="preview" data-list="${list}" data-i="${i}" title="${esc(f.name)}">
+               data-action="preview" data-list="${list}" data-i="${i}"${selAttr(f.path)} title="${esc(f.name)}">
+    ${selbox()}
     <span class="ficon grid place-items-center w-10 h-10 rounded-lg shrink-0" style="--h:${hue(ext) }">${icon(fileIcon(f), 'w-5 h-5')}</span>
     <div class="min-w-0 flex-1">
       <div class="truncate text-sm text-zinc-200 group-hover:text-white">${esc(f.name)}</div>
@@ -477,6 +551,7 @@ function fileTile(f, list, i) {
     <div class="flex items-center opacity-70 group-hover:opacity-100 transition">
       <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${icon('external')}</a>
       <a class="ibtn" href="${fileUrl(f.path, 1)}" title="Baixar">${icon('download')}</a>
+      ${kebab(f.path, 'w-8 h-8 rounded-md hover:bg-ink-700', false)}
     </div>
   </div>`;
 }
@@ -503,9 +578,11 @@ function fileSections(d) {
     `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${d.docs.map((f, i) => fileTile(f, 'docs', i)).join('')}</div>`);
   if (d.images.length) html += section('image', 'Imagens', d.images.length,
     `<div class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">${d.images.map((f, i) =>
-      `<button class="group relative aspect-video rounded-lg overflow-hidden border border-ink-700 bg-ink-850 hover:border-accent/50" data-action="preview" data-list="images" data-i="${i}" title="${esc(f.name)}">
+      `<button class="group relative aspect-video rounded-lg overflow-hidden border border-ink-700 bg-ink-850 hover:border-accent/50" data-action="preview" data-list="images" data-i="${i}"${selAttr(f.path)} title="${esc(f.name)}">
         <img src="${fileUrl(f.path)}" alt="" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-[1.03] transition duration-300">
         <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 px-2 pb-1.5 pt-4 text-left text-[11px] text-zinc-200">${esc(f.name)}</span>
+        <span class="absolute top-2 left-2">${selbox()}</span>
+        <span class="absolute top-1.5 right-1.5">${kebab(f.path, 'w-7 h-7 rounded-full bg-black/60 text-zinc-200 hover:bg-black/80')}</span>
       </button>`).join('')}</div>`);
   if (d.others.length) html += section('box', 'Outros arquivos', d.others.length,
     `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${d.others.map((f, i) => fileTile(f, 'others', i)).join('')}</div>`);
@@ -564,10 +641,12 @@ function renderRoot(d) {
       <span class="text-zinc-500 group-hover:text-zinc-200">${icon('chevron')}</span></a>`;
   }
 
-  if (tags.length) html += `<div class="mb-8 flex flex-wrap items-center gap-2">
-      <span class="mr-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">${icon('tag', 'w-3.5 h-3.5')} Filtrar</span>
+  const tools = canWrite() ? `<div class="ml-auto flex gap-2">${folderTools()}</div>` : '';
+  if (tags.length || tools) html += `<div class="mb-8 flex flex-wrap items-center gap-2">
+      ${tags.length ? `<span class="mr-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">${icon('tag', 'w-3.5 h-3.5')} Filtrar</span>
       ${tags.map(([t, n]) => tagChip(t, n)).join('')}
-      ${S.activeTags.size ? `<button class="ml-1 text-xs text-zinc-400 hover:text-white underline underline-offset-4" data-action="clear-tags">limpar</button>` : ''}
+      ${S.activeTags.size ? `<button class="ml-1 text-xs text-zinc-400 hover:text-white underline underline-offset-4" data-action="clear-tags">limpar</button>` : ''}` : ''}
+      ${tools}
     </div>`;
 
   const grid = items => `<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">${items.map(courseCard).join('')}</div>`;
@@ -578,6 +657,12 @@ function renderRoot(d) {
     : empty('Nenhuma pasta encontrada na raiz.', `<code class="mt-2 block text-xs text-zinc-500">${esc(d.hub.root)}</code>`);
   html += fileSections(d);
   $('#app').innerHTML = html;
+  paintSel();
+}
+
+function folderTools(cls = '') {
+  return `<button class="btn ${cls}" data-action="new-folder" title="Criar uma pasta aqui">${icon('folderPlus', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Nova pasta</span></button>
+    <button class="btn ${cls} ${S.selecting ? 'is-on' : ''}" data-action="select" title="Selecionar vários itens para mover ou excluir">${icon('checksq', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Selecionar</span></button>`;
 }
 
 function renderFolder(d) {
@@ -595,7 +680,11 @@ function renderFolder(d) {
     ${cover(d, { monogram: false })}
     <div class="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/85 to-ink-950/40"></div>
     <div class="relative flex min-h-[200px] flex-col justify-end gap-4 p-5 sm:p-8">
-      <button class="btn absolute top-4 right-4 bg-black/40 backdrop-blur" data-action="edit-cover" title="Trocar, remover ou ajustar a capa">${icon('image', 'w-3.5 h-3.5')} Editar capa</button>
+      ${canWrite() ? `<div class="absolute top-4 right-4 flex items-center gap-2">
+        ${folderTools('bg-black/40 backdrop-blur')}
+        <button class="btn bg-black/40 backdrop-blur" data-action="edit-cover" title="Trocar, remover ou ajustar a capa">${icon('image', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Editar capa</span></button>
+        ${kebab(d.path, 'w-8 h-8 rounded-md border border-ink-700 bg-black/40 backdrop-blur hover:bg-ink-700', false)}
+      </div>` : ''}
       ${d.parent != null ? `<a href="${hashFor(d.parent)}" class="inline-flex w-max items-center gap-1 text-xs text-zinc-400 hover:text-white">${icon('back', 'w-3.5 h-3.5')} Voltar</a>` : ''}
       <div>
         <h1 class="flex items-baseline gap-3 text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">
@@ -623,6 +712,7 @@ function renderFolder(d) {
   html += fileSections(d);
   if (!d.dirs.length && !d.media.length && !d.docs.length && !d.images.length && !d.others.length) html += empty('Esta pasta está vazia.');
   $('#app').innerHTML = html;
+  paintSel();
   $('.pill-active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
@@ -658,7 +748,9 @@ function renderError(err) {
 async function route({ force = false } = {}) {
   const { path, params } = parseHash();
   closeModal();
+  closeMenu();
   if (S.query) clearSearch();
+  if (S.selecting && (force || !S.data || S.data.path !== path)) setSelecting(false);
   if (!force && S.data && S.data.path === path) { applyParams(params); return; }
 
   closePlayer();
@@ -815,7 +907,7 @@ function langFor(name) {
 function openModal({ title, sub = '', body = '', actions = '', size = 'lg' }) {
   const m = $('#modal'), panel = $('#modal-panel');
   panel.className = 'flex flex-col rounded-xl border border-ink-700 bg-ink-900 shadow-2xl shadow-black overflow-hidden ' +
-    (size === 'full' ? 'w-[96vw] h-[92vh]' : 'w-full max-w-5xl max-h-[90vh]');
+    ({ full: 'w-[96vw] h-[92vh]', sm: 'w-full max-w-md max-h-[90vh]', md: 'w-full max-w-2xl max-h-[90vh]' }[size] || 'w-full max-w-5xl max-h-[90vh]');
   $('#modal-title').textContent = title;
   $('#modal-sub').textContent = sub;
   $('#modal-actions').innerHTML = actions;
@@ -831,6 +923,8 @@ function closeModal() {
   document.body.style.overflow = '';
   if (S.coverEdit?.blob) URL.revokeObjectURL(S.coverEdit.blob);
   S.coverEdit = null;
+  S.formSubmit = null;
+  S.picker = null;
 }
 const modalLinks = f => `
   <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${icon('external')}</a>
@@ -996,6 +1090,262 @@ async function saveCover() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Organizar: menu ⋯, seleção, criar, renomear, mover, lixeira          */
+/* ------------------------------------------------------------------ */
+const baseName = p => p.split('/').pop();
+
+function itemFor(path) {
+  const d = S.data;
+  if (!d) return null;
+  if (path === d.path) return { path, name: d.name, kind: 'dir', conf: d.conf };
+  const dir = d.dirs.find(x => x.path === path);
+  if (dir) return { ...dir, kind: 'dir' };
+  for (const list of ['media', 'docs', 'images', 'others']) {
+    const f = d[list].find(x => x.path === path);
+    if (f) return f;
+  }
+  return null;
+}
+
+function toggleMenu(btn) {
+  const m = $('#menu');
+  if (!m.classList.contains('hidden') && S.menuPath === btn.dataset.menu) { closeMenu(); return; }
+  closeMenu();
+  S.menuPath = btn.dataset.menu;
+  btn.classList.add('is-open');
+  m.innerHTML = [['item-rename', 'pencil', 'Renomear'], ['item-move', 'move', 'Mover para…'], ['item-trash', 'trash', 'Excluir']]
+    .map(([a, ic, label]) => `<button role="menuitem" data-action="${a}" class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition
+      ${a === 'item-trash' ? 'text-red-300 hover:bg-red-500/10' : 'text-zinc-200 hover:bg-ink-700'}">${icon(ic, 'w-4 h-4')}${label}</button>`).join('');
+  m.classList.remove('hidden');
+  const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+  m.style.top = (r.bottom + h + 8 > innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+  m.querySelector('button').focus({ preventScroll: true });
+}
+function closeMenu() {
+  const m = $('#menu');
+  if (m.classList.contains('hidden')) return;
+  m.classList.add('hidden');
+  $$('.kebab.is-open').forEach(el => el.classList.remove('is-open'));
+}
+
+function setSelecting(on) {
+  if (on) closePlayer({ updateHash: true });
+  S.selecting = on;
+  S.sel.clear();
+  $('#app').classList.toggle('selecting', on);
+  $$('[data-action="select"]').forEach(b => b.classList.toggle('is-on', on));
+  paintSel();
+}
+function toggleSel(path) {
+  if (S.sel.has(path)) S.sel.delete(path); else S.sel.add(path);
+  paintSel();
+}
+function paintSel() {
+  $$('#app [data-sel]').forEach(el => el.classList.toggle('is-selected', S.sel.has(el.dataset.sel)));
+  const bar = $('#selbar'), n = S.sel.size;
+  bar.classList.toggle('hidden', !S.selecting);
+  bar.classList.toggle('flex', S.selecting);
+  if (!S.selecting) return;
+  $('#sel-count').textContent = n ? plural(n, 'selecionado', 'selecionados') : 'Clique nos itens para selecionar';
+  $('[data-action="sel-move"]', bar).innerHTML = `${icon('move', 'w-3.5 h-3.5')} Mover para…`;
+  $('[data-action="sel-trash"]', bar).innerHTML = `${icon('trash', 'w-3.5 h-3.5')} Excluir`;
+  $$('[data-needs-sel]', bar).forEach(b => { b.disabled = !n; });
+}
+
+// Depois de renomear/mover: migra o progresso e reabre a pasta (ou o novo caminho dela).
+function afterMove(moved) {
+  migratePaths(moved);
+  if (S.selecting) setSelecting(false);
+  const cur = S.data ? S.data.path : '';
+  const hit = (moved || []).find(m => cur === m.from || cur.startsWith(m.from + '/'));
+  if (hit) go(hit.to + cur.slice(hit.from.length)); else route({ force: true });
+}
+
+// Modal pequeno com <form id="fs-form">; o submit chama S.formSubmit (erros aparecem em #fs-err).
+function openForm({ title, sub = '', inner, confirm, danger = false, onSubmit }) {
+  openModal({ title, sub, size: 'sm', body: `<form id="fs-form" class="flex flex-col gap-4 p-5" autocomplete="off">
+    ${inner}
+    <p id="fs-err" class="min-h-[1rem] text-xs text-red-300"></p>
+    <div class="flex justify-end gap-2">
+      <button type="button" class="btn" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn-primary ${danger ? '!bg-red-600 hover:!bg-red-700 !shadow-red-900/30' : ''}">${confirm}</button>
+    </div></form>` });
+  S.formSubmit = onSubmit;
+}
+const nameInput = value => `<input id="fs-name" value="${esc(value)}" spellcheck="false" maxlength="255"
+  class="w-full h-10 px-3 rounded-lg bg-ink-850 border border-ink-700 text-sm text-zinc-100 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20">`;
+
+function fsNewFolder(parent, parentTitle, after) {
+  openForm({
+    title: 'Nova pasta', sub: `Em ${parentTitle}`, confirm: 'Criar', inner: nameInput(''),
+    onSubmit: async () => {
+      const r = await postJSON('/api/fs/mkdir', { parent, name: $('#fs-name').value });
+      toast('Pasta criada');
+      (after || (() => route({ force: true })))(r.path);
+    },
+  });
+  $('#fs-name').focus();
+}
+
+function fsRename(it) {
+  const isDir = it.kind === 'dir';
+  const hint = isDir && it.conf && it.conf.title
+    ? `O nome exibido (“${it.conf.title}”) vem do course.conf e não muda.`
+    : it.kind === 'video' || it.kind === 'audio' ? 'Legendas com o mesmo nome são renomeadas junto.' : '';
+  openForm({
+    title: isDir ? 'Renomear pasta' : 'Renomear arquivo', sub: it.path, confirm: 'Renomear',
+    inner: nameInput(it.name) + (hint ? `<p class="-mt-2 text-xs text-zinc-500">${esc(hint)}</p>` : ''),
+    onSubmit: async () => {
+      const name = $('#fs-name').value.trim();
+      if (name === it.name) { closeModal(); return; }
+      closePlayer({ updateHash: true });
+      const r = await postJSON('/api/fs/rename', { path: it.path, name });
+      toast('Renomeado');
+      afterMove(r.moved);
+    },
+  });
+  const inp = $('#fs-name'), dot = it.name.lastIndexOf('.');
+  inp.focus();
+  inp.setSelectionRange(0, !isDir && dot > 0 ? dot : it.name.length);
+}
+
+function fsTrash(paths) {
+  const names = paths.map(baseName);
+  openForm({
+    title: 'Excluir', sub: paths.length === 1 ? paths[0] : plural(paths.length, 'item', 'itens'),
+    confirm: 'Mover para a lixeira', danger: true,
+    inner: `<p class="text-sm text-zinc-300">Mover ${paths.length === 1 ? 'este item' : `estes ${paths.length} itens`} para a lixeira?</p>
+      <ul class="space-y-1 rounded-lg border border-ink-700 bg-ink-850 px-3 py-2 text-xs text-zinc-400">
+        ${names.slice(0, 5).map(n => `<li class="truncate">${esc(n)}</li>`).join('')}${names.length > 5 ? `<li>+${names.length - 5}</li>` : ''}</ul>
+      <p class="text-xs text-zinc-500">Nada é apagado: vai para a pasta <code class="text-zinc-300">.lixeira</code> na raiz dos cursos, mantendo o caminho original.</p>`,
+    onSubmit: async () => {
+      closePlayer({ updateHash: true });
+      let r;
+      try { r = await postJSON('/api/fs/trash', { paths }); }
+      catch (e) { if (e.data && e.data.trashed && e.data.trashed.length) route({ force: true }); throw e; }
+      if (S.selecting) setSelecting(false);
+      toast(`Movido para a lixeira (${r.folder})`);
+      const cur = S.data ? S.data.path : '';
+      const hit = paths.find(p => cur === p || cur.startsWith(p + '/'));
+      if (hit) go(dirOf(hit)); else route({ force: true });
+    },
+  });
+}
+
+/* --- Navegador de pastas ("Mover para…") --- */
+function fsMove(paths) {
+  const parents = [...new Set(paths.map(dirOf))];
+  S.picker = { paths, cwd: parents.length === 1 ? parents[0] : '', title: '', seq: 0, busy: false };
+  openModal({
+    title: paths.length === 1 ? `Mover “${baseName(paths[0])}”` : `Mover ${paths.length} itens`,
+    sub: 'Escolha a pasta de destino', size: 'md', body: `
+    <div class="flex h-[62vh] flex-col">
+      <div class="flex gap-2 border-b border-ink-700 p-3">
+        <div class="relative flex-1">
+          <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500">${icon('search', 'w-3.5 h-3.5')}</span>
+          <input id="pk-q" type="search" placeholder="Buscar pasta em toda a biblioteca…" spellcheck="false"
+                 class="w-full h-8 pl-8 pr-2 rounded-md bg-ink-850 border border-ink-700 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-accent/60">
+        </div>
+        <button class="btn" data-action="pk-mkdir">${icon('folderPlus', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Nova pasta aqui</span></button>
+      </div>
+      <nav id="pk-crumbs" class="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap px-4 py-2 text-xs text-zinc-500"></nav>
+      <div id="pk-list" class="flex-1 overflow-auto px-2 pb-2"></div>
+      <div class="flex flex-wrap items-center justify-end gap-2 border-t border-ink-700 p-3">
+        <p id="pk-msg" class="mr-auto text-xs text-zinc-500"></p>
+        <button class="btn" data-action="close-modal">Cancelar</button>
+        <button class="btn-primary max-w-[60%]" data-action="pk-confirm"></button>
+      </div>
+    </div>` });
+  loadPicker(S.picker.cwd);
+}
+
+async function loadPicker(cwd) {
+  const pk = S.picker;
+  if (!pk) return;
+  const seq = ++pk.seq;
+  pk.cwd = cwd;
+  $('#pk-q').value = '';
+  try {
+    const t = await api(`/api/tree?path=${enc(cwd)}`);
+    if (S.picker !== pk || seq !== pk.seq) return;
+    pk.title = t.title;
+    $('#pk-crumbs').innerHTML = t.breadcrumbs.map((c, i) =>
+      `${i ? `<span class="text-zinc-700">${icon('chevron', 'w-3 h-3')}</span>` : ''}<button class="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-800 hover:text-zinc-200 ${i === t.breadcrumbs.length - 1 ? 'text-zinc-200' : ''}" data-action="pk-go" data-path="${esc(c.path)}">${i ? '' : icon('home', 'w-3.5 h-3.5')}${esc(c.title)}</button>`).join('');
+    renderPickerList(t.dirs, 'Sem subpastas aqui.');
+  } catch (e) {
+    if (S.picker === pk) $('#pk-list').innerHTML = `<p class="p-6 text-sm text-red-300">${esc(e.message)}</p>`;
+  }
+  paintPicker();
+}
+
+function renderPickerList(dirs, emptyMsg) {
+  const pk = S.picker;
+  const blocked = p => pk.paths.some(x => p === x || p.startsWith(x + '/'));
+  $('#pk-list').innerHTML = dirs.length ? dirs.map(x => `
+    <button class="result ${blocked(x.path) ? 'opacity-40 pointer-events-none' : ''}" data-action="pk-go" data-path="${esc(x.path)}">
+      <span class="ficon grid place-items-center w-8 h-8 rounded-md shrink-0" style="--h:${hue(x.title)}">${icon('folder', 'w-4 h-4')}</span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-sm text-zinc-200">${esc(x.title)}</span>
+        ${x.where != null ? `<span class="block truncate text-[11px] text-zinc-500">${esc(x.where)}</span>` : ''}
+      </span>
+      ${x.has_dirs || x.where != null ? `<span class="text-zinc-600">${icon('chevron', 'w-4 h-4')}</span>` : ''}
+    </button>`).join('') : `<p class="p-8 text-center text-sm text-zinc-500">${emptyMsg}</p>`;
+}
+
+function paintPicker() {
+  const pk = S.picker;
+  if (!pk) return;
+  const inside = pk.paths.some(p => pk.cwd === p || pk.cwd.startsWith(p + '/'));
+  const same = pk.paths.every(p => dirOf(p) === pk.cwd);
+  const btn = $('[data-action="pk-confirm"]');
+  btn.disabled = inside || same || pk.busy;
+  $('#pk-msg').className = 'mr-auto text-xs text-zinc-500';
+  btn.innerHTML = `${icon('move', 'w-4 h-4')}<span class="truncate">Mover para “${esc(pk.title || 'Início')}”</span>`;
+  $('#pk-msg').textContent = inside ? 'Não dá para mover uma pasta para dentro dela mesma.' : same ? 'Os itens já estão nesta pasta.' : '';
+}
+
+let pickerTimer;
+function onPickerSearch() {
+  const pk = S.picker, q = $('#pk-q').value.trim();
+  clearTimeout(pickerTimer);
+  if (!q) { loadPicker(pk.cwd); return; }
+  pickerTimer = setTimeout(async () => {
+    const seq = ++pk.seq;
+    try {
+      const r = await api(`/api/search?q=${enc(q)}`);
+      if (S.picker !== pk || seq !== pk.seq) return;
+      renderPickerList(r.results.filter(x => x.type === 'dir')
+        .map(x => ({ ...x, where: x.parent ? x.parent.split('/').join(' › ') : 'Início' })), 'Nenhuma pasta encontrada.');
+    } catch (e) { toast('Erro na busca: ' + e.message); }
+  }, 150);
+}
+
+async function pickerConfirm() {
+  const pk = S.picker;
+  if (!pk || pk.busy) return;
+  pk.busy = true; paintPicker();
+  closePlayer({ updateHash: true });
+  try {
+    const r = await postJSON('/api/fs/move', { paths: pk.paths, dest: pk.cwd });
+    toast(`Movido para “${pk.title || 'Início'}”`);
+    afterMove(r.moved);
+  } catch (e) {
+    if (e.data && e.data.moved && e.data.moved.length) { toast(e.message); afterMove(e.data.moved); return; }
+    if (S.picker === pk) { pk.busy = false; paintPicker(); $('#pk-msg').textContent = e.message; $('#pk-msg').className = 'mr-auto text-xs text-red-300'; }
+  }
+}
+
+function pickerNewFolder() {
+  if ($('#pk-new')) { $('#pk-new-name').focus(); return; }
+  $('#pk-list').insertAdjacentHTML('afterbegin', `<form id="pk-new" class="flex gap-2 p-2" autocomplete="off">
+    <input id="pk-new-name" placeholder="Nome da nova pasta" spellcheck="false" maxlength="255"
+           class="min-w-0 flex-1 h-8 px-2.5 rounded-md bg-ink-850 border border-accent/50 text-xs text-zinc-100 outline-none">
+    <button class="btn" type="submit">Criar</button></form>`);
+  $('#pk-new-name').focus();
+}
+
+/* ------------------------------------------------------------------ */
 /* Busca global                                                         */
 /* ------------------------------------------------------------------ */
 const qInput = $('#q');
@@ -1117,6 +1467,22 @@ async function handleAction(el) {
       break;
     }
     case 'cover-save': saveCover(); break;
+    case 'item-rename': case 'item-move': case 'item-trash': {
+      const p = S.menuPath, it = itemFor(p);
+      closeMenu();
+      if (!it) break;
+      if (a === 'item-rename') fsRename(it); else if (a === 'item-move') fsMove([p]); else fsTrash([p]);
+      break;
+    }
+    case 'new-folder': if (d) fsNewFolder(d.path, d.title); break;
+    case 'select': setSelecting(!S.selecting); break;
+    case 'sel-all': $$('#app [data-sel]').forEach(x => S.sel.add(x.dataset.sel)); paintSel(); break;
+    case 'sel-move': if (S.sel.size) fsMove([...S.sel]); break;
+    case 'sel-trash': if (S.sel.size) fsTrash([...S.sel]); break;
+    case 'sel-cancel': setSelecting(false); break;
+    case 'pk-go': loadPicker(el.dataset.path); break;
+    case 'pk-mkdir': pickerNewFolder(); break;
+    case 'pk-confirm': pickerConfirm(); break;
     case 'refresh':
       try {
         const r = await api('/api/refresh', { method: 'POST' });
@@ -1128,6 +1494,13 @@ async function handleAction(el) {
 }
 
 document.addEventListener('click', e => {
+  if (!e.target.closest('#menu, [data-menu]')) closeMenu();
+  if (S.selecting) {                                    // no modo seleção, clicar alterna a seleção
+    const s = e.target.closest('#app [data-sel]');
+    if (s) { e.preventDefault(); e.stopPropagation(); toggleSel(s.dataset.sel); return; }
+  }
+  const menuBtn = e.target.closest('[data-menu]');
+  if (menuBtn) { e.preventDefault(); e.stopPropagation(); toggleMenu(menuBtn); return; }
   const fav = e.target.closest('[data-fav]');            // antes de a[href]: a estrela fica dentro de links/cards
   if (fav) { e.preventDefault(); e.stopPropagation(); toggleFav(fav.dataset.fav); return; }
   const tag = e.target.closest('[data-tag]');
@@ -1149,7 +1522,33 @@ document.addEventListener('change', e => {
 
 document.addEventListener('input', e => {
   if (e.target.dataset.action === 'cover-pos' && S.coverEdit) { S.coverEdit.pos = +e.target.value; paintCoverEditor({ preview: false }); }
+  else if (e.target.id === 'pk-q' && S.picker) onPickerSearch();
 });
+
+document.addEventListener('submit', async e => {
+  const form = e.target;
+  if (form.id === 'pk-new') {                           // nova pasta dentro do navegador de pastas
+    e.preventDefault();
+    const pk = S.picker;
+    if (!pk) return;
+    try {
+      const r = await postJSON('/api/fs/mkdir', { parent: pk.cwd, name: $('#pk-new-name').value });
+      toast('Pasta criada');
+      loadPicker(r.path);
+    } catch (err) { $('#pk-msg').textContent = err.message; $('#pk-msg').className = 'mr-auto text-xs text-red-300'; }
+    return;
+  }
+  if (form.id !== 'fs-form' || !S.formSubmit) return;
+  e.preventDefault();
+  const btn = $('button[type="submit"]', form);
+  btn.disabled = true;
+  $('#fs-err').textContent = '';
+  try { await S.formSubmit(); }
+  catch (err) { if ($('#fs-err')) { $('#fs-err').textContent = err.message; btn.disabled = false; } }
+});
+
+window.addEventListener('scroll', closeMenu, { passive: true });
+window.addEventListener('resize', closeMenu);
 
 // Arrastar e soltar / colar imagem enquanto o editor de capa está aberto.
 document.addEventListener('dragover', e => {
@@ -1183,9 +1582,12 @@ qInput.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
   if (e.key === 'Enter' && e.target.id === 'ce-url') { e.preventDefault(); setCoverUrl(); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-menu]')) { e.preventDefault(); toggleMenu(e.target); return; }
   if (e.key === 'Escape') {
-    if (!$('#modal').classList.contains('hidden')) closeModal();
+    if (!$('#menu').classList.contains('hidden')) closeMenu();
+    else if (!$('#modal').classList.contains('hidden')) closeModal();
     else if (S.query) clearSearch();
+    else if (S.selecting) setSelecting(false);
     return;
   }
   if (!typing && (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'))) {

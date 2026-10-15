@@ -1,0 +1,93 @@
+# Hub de Cursos
+
+Portal local (estilo Obsidian, dark mode) para navegar pela sua pasta de cursos e laboratórios:
+cards por curso, tags clicáveis, busca instantânea, player de vídeo com seek suave,
+progresso por aula e pré-visualização de PDFs, Markdown e código.
+
+Sem banco de dados e sem build de Node: um `server.py` (FastAPI) + um `index.html`
+(Tailwind via CDN + JavaScript puro).
+
+## Instalação
+
+Requer Python 3.9+.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt    # = pip install fastapi uvicorn
+```
+
+## Como iniciar
+
+```bash
+# a partir da pasta raiz dos cursos
+cd ~/Cursos
+python /caminho/para/server.py
+
+# ou apontando a raiz explicitamente
+python server.py --root ~/Cursos
+```
+
+O navegador abre em `http://localhost:8000`.
+
+| Opção | Descrição |
+|---|---|
+| `-r, --root PASTA` | Pasta raiz dos cursos (padrão: pasta atual, ou `$HUB_ROOT`) |
+| `-p, --port 8000` | Porta HTTP |
+| `--host 0.0.0.0` | Expõe na LAN (ex.: assistir no tablet). O padrão `127.0.0.1` só aceita acesso local |
+| `--no-browser` | Não abre o navegador automaticamente |
+| `--follow-symlinks` | Permite links simbólicos que apontam para fora da raiz (ex.: cursos em um HD externo) |
+| `--ttl 30` | Segundos de cache do índice de busca e das contagens recursivas |
+
+Se o `server.py` ficar dentro da própria pasta de cursos, os arquivos do app ficam ocultos no hub.
+
+## Configuração por pasta (`course.conf`)
+
+Opcional, em qualquer pasta. Também é lido como `.course.conf` ou `.conf`.
+Veja `course.conf.example`:
+
+```ini
+pinned = true
+banner = banner.jpg            # caminho local, absoluto ou URL externa
+tags = Active Directory, Pentest, Windows, Kerberos
+title = Active Directory Exploitation
+description = Anotações e aulas sobre exploração em ambientes AD.
+```
+
+Campos extras: `status`, `color`, `order`, `hidden`. Sem `banner`, o app procura
+`banner.*`, `cover.*` ou `capa.*` na pasta e, se não houver, gera um gradiente.
+Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
+
+## Funcionalidades
+
+- **Dashboard:** seção de fixados, grid de cards (capa, título, contagem de aulas/materiais/pastas, tags, status), filtro por tags (mais de uma tag combina com E), e um atalho "Continuar assistindo".
+- **Navegação:** breadcrumbs, pills para pastas irmãs, módulos (subpastas) com progresso. As URLs ficam no hash (`#/Curso/Modulo?play=aula.mp4`), então voltar, avançar e favoritos funcionam.
+- **Vídeos** (`.mp4 .mkv .webm .mov .m4v`) e áudios: lista com título limpo (`03 - Kerberoasting_avancado.mp4` vira **03** Kerberoasting avancado). O player só é criado quando você clica (um vídeo por vez) e traz PiP, tela cheia, velocidade, anterior/próxima, autoplay da próxima e retomada de onde parou. A aula é marcada como assistida aos 90%. Legendas `.srt`/`.vtt` com o mesmo nome (`aula.pt-BR.srt`) são carregadas automaticamente.
+- **Materiais:** PDF no visualizador do navegador; código (`.asm .py .sh .c .ps1 …`) com syntax highlighting e numeração de linhas; Markdown renderizado (com imagens relativas); botões de copiar, abrir em nova aba e baixar.
+- **Busca** (`/` ou `Ctrl+K`): ignora acentos e maiúsculas e procura em pastas, aulas, arquivos e tags. Dá para restringir à pasta atual. `Enter` abre o primeiro resultado e as setas navegam.
+- **Progresso:** fica salvo no `localStorage` do navegador. Nada é gravado nas suas pastas.
+
+## Segurança
+
+- Escuta só em `127.0.0.1` por padrão e rejeita `Host` desconhecido (proteção contra DNS rebinding).
+- Bloqueia `../`, caminhos absolutos, arquivos ocultos (`.algo`) e symlinks para fora da raiz (a menos que você use `--follow-symlinks`).
+- `.html`/`.js`/`.xml` são servidos como texto puro e `.svg` com CSP `sandbox`, para que nenhum material execute script na origem do app.
+
+## Observações
+
+- **MKV:** o navegador só toca se o codec for suportado (H.264/VP9/AV1 + AAC/Opus). MKV com HEVC ou AC3 mostra um aviso com link de download para abrir no VLC/mpv.
+- **Offline:** Tailwind, highlight.js e marked vêm de CDN. Sem internet o app funciona, mas sem estilo.
+- **Arquivos novos** aparecem na hora na listagem. As contagens e a busca se atualizam em até `--ttl` segundos, ou na hora pelo botão ⟳ (reindexar).
+
+## API
+
+| Rota | Descrição |
+|---|---|
+| `GET /api/list?path=` | Conteúdo da pasta (subpastas com conf e contagens, mídias, materiais, breadcrumbs, irmãs) |
+| `GET /api/search?q=&path=` | Busca global ou dentro de uma pasta |
+| `GET/HEAD /api/file?path=[&download=1]` | Arquivo com suporte a `Range` (206 Partial Content) |
+| `GET /api/banner?path=` | Capa da pasta |
+| `GET /api/text?path=` | Conteúdo de texto/código (até 2 MB) |
+| `GET /api/subtitle?path=` | Legenda convertida para WebVTT |
+| `POST /api/refresh` | Reconstrói o índice |
+| `GET /api/docs` | Documentação interativa (Swagger) |

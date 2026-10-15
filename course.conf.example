@@ -1,0 +1,19 @@
+# course.conf — coloque na pasta do curso (ou em qualquer subpasta).
+# Formato chave = valor (também aceita "chave: valor" estilo YAML).
+# Comentários começam com # ; para usar # dentro de um valor, coloque o valor entre aspas.
+
+pinned = true                    # true/1/sim: fica fixado no topo
+title = Active Directory Exploitation      # sobrescreve o nome da pasta (opcional)
+description = Anotações e aulas sobre exploração em ambientes AD.
+tags = Active Directory, Pentest, Windows, Kerberos
+
+# Capa: arquivo relativo à pasta, caminho absoluto ou URL externa.
+# Sem "banner", o app usa banner.*/cover.*/capa.* da pasta, ou um gradiente.
+banner = banner.jpg
+# banner = https://exemplo.com/capa.png
+
+# Opcionais
+# status = Em andamento          # rótulo fixo no card (senão é calculado pelo progresso)
+# color = #1e3a8a                # cor base do gradiente quando não há banner
+# order = 1                      # ordem manual (menor primeiro, depois dos fixados)
+# hidden = true                  # esconde a pasta do hub

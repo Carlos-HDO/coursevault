@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub de Cursos</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%238b7cf6'/%3E%3Cpath d='M7 6.5v11l9-5.5z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com/3.4.16?plugins=typography"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          ink: { 950: '#0f0f11', 900: '#141416', 850: '#18181b', 800: '#1e1e22', 700: '#2a2a30', 600: '#36363d', 500: '#4b4b55' },
+          accent: { DEFAULT: '#8b7cf6', soft: '#b3a8ff', deep: '#6d5ce8' },
+        },
+      },
+    },
+  };
+</script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/x86asm.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/powershell.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dos.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+
+<style>
+  :root { color-scheme: dark; }
+  html, body { background: #0f0f11; }
+  body { -webkit-font-smoothing: antialiased; }
+  ::selection { background: rgba(139, 124, 246, .35); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 10px; border: 2px solid #0f0f11; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .cover-grid {
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(ellipse at 30% 20%, #000 20%, transparent 75%);
+            mask-image: radial-gradient(ellipse at 30% 20%, #000 20%, transparent 75%);
+  }
+  .tag {
+    color: hsl(var(--h) 75% 78%);
+    background: hsl(var(--h) 55% 55% / .10);
+    border: 1px solid hsl(var(--h) 55% 65% / .20);
+  }
+  .tag:hover { background: hsl(var(--h) 55% 55% / .2); }
+  .tag.is-active { background: hsl(var(--h) 60% 60% / .28); border-color: hsl(var(--h) 70% 70% / .6); color: #fff; }
+  .ficon { color: hsl(var(--h) 70% 72%); background: hsl(var(--h) 50% 50% / .10); border: 1px solid hsl(var(--h) 50% 60% / .18); }
+  mark { background: rgba(139, 124, 246, .28); color: #fff; border-radius: 3px; padding: 0 1px; }
+  .hljs { background: transparent !important; padding: 0 !important; }
+  .lesson { scroll-margin-top: 110px; }
+  #modal-body .prose pre { background: #0f0f11; border: 1px solid #2a2a30; }
+</style>
+
+<style type="text/tailwindcss">
+  @layer components {
+    .btn { @apply inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-ink-700 bg-ink-800 text-zinc-300 text-xs font-medium hover:bg-ink-700 hover:text-white transition disabled:opacity-40 disabled:pointer-events-none; }
+    .btn-primary { @apply inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-deep transition shadow-lg shadow-accent/20; }
+    .ibtn { @apply inline-grid place-items-center w-8 h-8 rounded-md text-zinc-400 hover:text-white hover:bg-ink-700 transition; }
+    .section-title { @apply flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-400; }
+    .count { @apply ml-1 rounded-full bg-ink-700 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 tracking-normal; }
+    .tag { @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium transition; }
+    .pill { @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-ink-700 bg-ink-850 text-xs text-zinc-400 whitespace-nowrap hover:text-white hover:border-ink-500 transition; }
+    .pill-active { @apply border-accent/60 bg-accent/15 text-white; }
+    .card { @apply flex flex-col rounded-xl overflow-hidden border border-ink-700 bg-ink-850 cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-2xl hover:shadow-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent; }
+    .badge { @apply inline-flex items-center rounded border border-ink-600 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-zinc-400; }
+    .check { @apply grid place-items-center w-5 h-5 shrink-0 rounded-full border border-zinc-600 text-transparent hover:border-accent hover:text-accent-soft transition; }
+    .lesson.is-watched .check { @apply bg-accent border-accent text-white; }
+    .lesson.is-watched .lesson-title { @apply text-zinc-500; }
+    .lesson.is-playing { @apply bg-accent/[.06]; }
+    .lesson.is-playing .lesson-num { @apply bg-accent text-white border-accent; }
+    .lesson-num { @apply grid place-items-center min-w-[2.25rem] h-6 px-1.5 rounded-md border border-ink-600 bg-ink-800 text-[11px] font-mono text-zinc-400 tabular-nums; }
+    .result { @apply w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-ink-800 focus:bg-ink-800 focus:outline-none focus:ring-1 focus:ring-accent/50 transition; }
+  }
+</style>
+</head>
+
+<body class="min-h-screen bg-ink-950 font-sans text-zinc-300">
+
+<header class="sticky top-0 z-30 border-b border-ink-700/70 bg-ink-950/80 backdrop-blur-xl">
+  <div class="max-w-[1400px] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-5">
+    <a href="#/" class="flex items-center gap-2.5 shrink-0" title="Início">
+      <span class="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-accent-deep text-white shadow-lg shadow-accent/25" data-icon="book"></span>
+      <span id="hub-title" class="hidden md:inline font-semibold text-zinc-100 text-sm">Hub de Cursos</span>
+    </a>
+    <div class="relative flex-1 max-w-2xl mx-auto">
+      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" data-icon="search"></span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Buscar cursos, aulas, arquivos ou tags…"
+             class="w-full h-9 pl-9 pr-10 rounded-lg bg-ink-850 border border-ink-700 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition [&::-webkit-search-cancel-button]:hidden">
+      <kbd class="absolute right-2.5 top-1/2 -translate-y-1/2 hidden sm:grid place-items-center w-5 h-5 rounded border border-ink-600 text-[10px] text-zinc-500 font-mono">/</kbd>
+    </div>
+    <button class="ibtn shrink-0" data-action="refresh" title="Reindexar pastas" data-icon="refresh"></button>
+  </div>
+  <nav id="crumbs" class="max-w-[1400px] mx-auto px-4 h-9 flex items-center gap-1.5 text-xs text-zinc-500 overflow-x-auto no-scrollbar whitespace-nowrap" aria-label="Breadcrumbs"></nav>
+</header>
+
+<main id="app" class="max-w-[1400px] mx-auto px-4 py-6 sm:py-8"></main>
+<main id="search-view" class="hidden max-w-[1400px] mx-auto px-4 py-6 sm:py-8"></main>
+
+<div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-6">
+  <div id="modal-panel" class="flex flex-col w-full max-w-5xl max-h-[90vh] rounded-xl border border-ink-700 bg-ink-900 shadow-2xl shadow-black overflow-hidden">
+    <div class="flex items-center gap-3 px-4 h-12 border-b border-ink-700 shrink-0">
+      <div class="min-w-0 flex-1">
+        <div id="modal-title" class="truncate text-sm font-medium text-zinc-100"></div>
+        <div id="modal-sub" class="truncate text-[11px] text-zinc-500"></div>
+      </div>
+      <div id="modal-actions" class="flex items-center gap-1"></div>
+      <button class="ibtn" data-action="close-modal" title="Fechar (Esc)" data-icon="x"></button>
+    </div>
+    <div id="modal-body" class="flex-1 overflow-auto"></div>
+  </div>
+</div>
+
+<div id="toast" class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-lg border border-ink-600 bg-ink-800/95 px-4 py-2.5 text-sm text-zinc-200 shadow-xl opacity-0 translate-y-2 pointer-events-none transition duration-200"></div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/* Utilitários                                                          */
+/* ------------------------------------------------------------------ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const enc = encodeURIComponent;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const normTxt = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const hue = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.codePointAt(0)) >>> 0; return h % 360; };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const extOf = n => { const i = n.lastIndexOf('.'); return i > 0 ? n.slice(i).toLowerCase() : ''; };
+const dirOf = p => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+const fileUrl = (p, dl) => `/api/file?path=${enc(p)}${dl ? '&download=1' : ''}`;
+
+function fmtSize(b) {
+  if (b == null) return '';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return `${b < 10 && i ? b.toFixed(1) : Math.round(b)} ${u[i]}`;
+}
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+function joinPath(base, rel) {
+  const out = base ? base.split('/') : [];
+  for (let seg of rel.split(/[?#]/)[0].split('/')) {
+    try { seg = decodeURIComponent(seg); } catch {}
+    if (!seg || seg === '.') continue;
+    if (seg === '..') out.pop(); else out.push(seg);
+  }
+  return out.join('/');
+}
+function hashFor(path, params) {
+  const seg = (path || '').split('/').filter(Boolean).map(enc).join('/');
+  const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params) : '';
+  return '#/' + seg + qs;
+}
+function parseHash() {
+  const raw = location.hash.replace(/^#\/?/, '');
+  const i = raw.indexOf('?');
+  const p = i >= 0 ? raw.slice(0, i) : raw;
+  const path = p.split('/').filter(Boolean).map(s => { try { return decodeURIComponent(s); } catch { return s; } }).join('/');
+  return { path, params: new URLSearchParams(i >= 0 ? raw.slice(i + 1) : '') };
+}
+function go(path, params) {
+  const h = hashFor(path, params);
+  if (location.hash === h) route(); else location.hash = h;
+}
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    let msg = `${r.status} ${r.statusText}`;
+    try { const j = await r.json(); if (j.detail) msg = j.detail; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.remove('opacity-0', 'translate-y-2');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.add('opacity-0', 'translate-y-2'), 2400);
+}
+function hl(text, q) {
+  text = String(text ?? '');
+  const terms = normTxt(q || '').split(/\s+/).filter(Boolean);
+  if (!terms.length) return esc(text);
+  let norm = ''; const map = [];
+  for (let i = 0; i < text.length; i++) {
+    const n = normTxt(text[i]);
+    for (let k = 0; k < n.length; k++) { norm += n[k]; map.push(i); }
+  }
+  const marks = new Array(text.length).fill(false);
+  for (const t of terms) {
+    for (let idx = norm.indexOf(t); idx !== -1; idx = norm.indexOf(t, idx + t.length))
+      for (let k = idx; k < idx + t.length; k++) marks[map[k]] = true;
+  }
+  let out = '', open = false;
+  for (let i = 0; i < text.length; i++) {
+    if (marks[i] !== open) { out += marks[i] ? '<mark>' : '</mark>'; open = marks[i]; }
+    out += esc(text[i]);
+  }
+  return open ? out + '</mark>' : out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ícones (traço estilo Lucide)                                         */
+/* ------------------------------------------------------------------ */
+const ICONS = {
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  download: '<path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
+  pip: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>',
+  expand: '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  prev: '<path d="M19 20 9 12l10-8zM5 19V5"/>',
+  next: '<path d="m5 4 10 8-10 8zM19 5v14"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  box: '<path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  tag: '<path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L3 13V3h10l7.59 7.59a2 2 0 0 1 0 2.82z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+};
+const icon = (n, cls = 'w-4 h-4') =>
+  `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+
+/* ------------------------------------------------------------------ */
+/* Estado e progresso (localStorage, por navegador)                     */
+/* ------------------------------------------------------------------ */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('hub:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('hub:' + k, JSON.stringify(v)); } catch {} },
+};
+const watched = store.get('watched', {});
+const positions = store.get('pos', {});
+const prefs = Object.assign({ autoplay: true, rate: 1 }, store.get('prefs', {}));
+const savePrefs = () => store.set('prefs', prefs);
+
+const S = {
+  path: null, data: null, routeSeq: 0,
+  activeTags: new Set(),
+  query: '', scopeLocal: false, results: [], searchSeq: 0,
+  playing: -1, modalText: '',
+};
+
+function watchedCount(prefix) {
+  if (!prefix) return Object.keys(watched).length;
+  const p = prefix + '/'; let n = 0;
+  for (const k in watched) if (k.startsWith(p)) n++;
+  return n;
+}
+function progress(prefix, total) {
+  if (!total) return { done: 0, total: 0, pct: 0 };
+  const done = Math.min(watchedCount(prefix), total);
+  return { done, total, pct: Math.round(done / total * 100) };
+}
+const progText = p => `${p.done}/${p.total} aulas · ${p.pct}%`;
+function setWatched(path, val) {
+  if (val) watched[path] = Date.now(); else delete watched[path];
+  store.set('watched', watched);
+  refreshProgressUI();
+}
+function savePos(path, t, dur) {
+  if (!t || t < 5) return;
+  if (dur && t > dur - 15) delete positions[path]; else positions[path] = Math.floor(t);
+  store.set('pos', positions);
+}
+function progBar(prefix, total, cls = 'h-1') {
+  const p = progress(prefix, total);
+  return `<div class="${cls} rounded-full bg-white/[.06] overflow-hidden" data-prog="${esc(prefix)}" data-total="${total}">
+    <div class="h-full rounded-full bg-gradient-to-r from-accent-deep to-accent-soft transition-all duration-500" style="width:${p.pct}%"></div></div>`;
+}
+function refreshProgressUI() {
+  $$('[data-prog]').forEach(el => { el.firstElementChild.style.width = progress(el.dataset.prog, +el.dataset.total).pct + '%'; });
+  $$('[data-prog-label]').forEach(el => { el.textContent = progText(progress(el.dataset.progLabel, +el.dataset.total)); });
+  $$('[data-watch]').forEach(el => el.classList.toggle('is-watched', !!watched[el.dataset.watch]));
+}
+
+/* ------------------------------------------------------------------ */
+/* Componentes                                                          */
+/* ------------------------------------------------------------------ */
+function initials(t) {
+  const w = String(t).replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(x => x && !/^\d+$/.test(x));
+  return (w.slice(0, 2).map(x => x[0]).join('') || '•').toUpperCase();
+}
+function dirLabel(x) {
+  return x.conf && x.conf.title ? { num: null, text: x.conf.title } : { num: x.num, text: x.num ? x.clean : x.name };
+}
+function cover(item, { monogram = true } = {}) {
+  const conf = item.conf || {}, t = item.title || item.name || '', h = hue(t);
+  const bg = conf.color
+    ? `background:linear-gradient(135deg, ${conf.color}, #0f0f11 85%)`
+    : `background:radial-gradient(120% 120% at 0% 0%, hsl(${h} 42% 24% / .95), transparent 60%),
+       radial-gradient(100% 100% at 100% 100%, hsl(${(h + 55) % 360} 38% 18% / .85), transparent 55%), #141416`;
+  return `<div class="absolute inset-0" style="${esc(bg)}">
+      <div class="absolute inset-0 cover-grid"></div>
+      ${monogram ? `<span class="absolute inset-0 grid place-items-center text-5xl font-bold tracking-tight text-white/[.08] select-none">${esc(initials(item.clean || t))}</span>` : ''}
+      ${conf.banner ? `<img src="${esc(conf.banner)}" alt="" loading="lazy" decoding="async" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">` : ''}
+    </div>`;
+}
+function tagChip(t, count) {
+  return `<button type="button" data-tag="${esc(t)}" class="tag ${S.activeTags.has(t) ? 'is-active' : ''}" style="--h:${hue(t)}">
+    ${esc(t)}${count != null ? `<span class="ml-1.5 opacity-60">${count}</span>` : ''}</button>`;
+}
+function metaLine(st, cls = 'text-xs') {
+  const parts = [];
+  if (st.media) parts.push(['film', plural(st.media, 'aula', 'aulas')]);
+  if (st.docs) parts.push(['file', plural(st.docs, 'material', 'materiais')]);
+  if (st.dirs) parts.push(['folder', plural(st.dirs, 'pasta', 'pastas')]);
+  const rest = st.files - st.media - st.docs;
+  if (!parts.length) parts.push(['box', rest > 0 ? plural(rest, 'arquivo', 'arquivos') : 'vazia']);
+  return `<div class="flex flex-wrap gap-x-3 gap-y-1 ${cls} text-zinc-500">${parts.map(([i, t]) =>
+    `<span class="inline-flex items-center gap-1">${icon(i, 'w-3.5 h-3.5')}${t}</span>`).join('')}</div>`;
+}
+function statusChip(conf, p) {
+  let label, color;
+  if (conf.status) { label = conf.status; color = 'bg-accent/20 text-accent-soft border-accent/30'; }
+  else if (!p.total) return '';
+  else if (p.pct >= 100) { label = 'Concluído'; color = 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30'; }
+  else if (p.done > 0) { label = `Em andamento · ${p.pct}%`; color = 'bg-amber-500/15 text-amber-200 border-amber-400/30'; }
+  else { label = 'Não iniciado'; color = 'bg-black/40 text-zinc-300 border-white/10'; }
+  return `<span class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold backdrop-blur ${color}">
+    <span class="w-1.5 h-1.5 rounded-full bg-current"></span>${esc(label)}</span>`;
+}
+
+function courseCard(d) {
+  const c = d.conf, st = d.stats, p = progress(d.path, st.media);
+  return `<article class="card group" data-nav="${esc(d.path)}" tabindex="0">
+    <div class="relative aspect-[16/8] overflow-hidden">
+      ${cover(d)}
+      <div class="absolute inset-0 bg-gradient-to-t from-ink-850 via-transparent to-transparent"></div>
+      <div class="absolute top-3 left-3 right-3 flex justify-between items-start gap-2">
+        ${c.pinned ? `<span class="inline-grid place-items-center w-6 h-6 rounded-full bg-black/50 text-accent-soft backdrop-blur" title="Fixado">${icon('pin', 'w-3.5 h-3.5')}</span>` : '<span></span>'}
+        ${statusChip(c, p)}
+      </div>
+    </div>
+    <div class="flex flex-1 flex-col gap-3 p-4 pt-3">
+      <div>
+        <h3 class="text-[15px] font-semibold leading-snug text-zinc-100 group-hover:text-white line-clamp-2">
+          <a href="${hashFor(d.path)}" tabindex="-1">${esc(d.title)}</a></h3>
+        ${c.description ? `<p class="mt-1 text-[13px] leading-relaxed text-zinc-400 line-clamp-2">${esc(c.description)}</p>` : ''}
+      </div>
+      ${metaLine(st)}
+      ${c.tags.length ? `<div class="flex flex-wrap gap-1.5">${c.tags.map(t => tagChip(t)).join('')}</div>` : ''}
+      ${st.media ? `<div class="mt-auto pt-1">${progBar(d.path, st.media)}</div>` : ''}
+    </div>
+  </article>`;
+}
+
+function moduleCard(d, i) {
+  const st = d.stats, lab = dirLabel(d), h = hue(d.title);
+  const thumb = d.conf.banner
+    ? `<img src="${esc(d.conf.banner)}" alt="" loading="lazy" class="w-12 h-12 rounded-lg object-cover shrink-0" onerror="this.style.visibility='hidden'">`
+    : `<span class="grid place-items-center w-12 h-12 rounded-lg shrink-0 font-mono text-sm font-semibold"
+         style="color:hsl(${h} 70% 78%);background:hsl(${h} 45% 45% / .14);border:1px solid hsl(${h} 50% 60% / .2)">
+         ${lab.num ? esc(lab.num) : icon('folder', 'w-5 h-5')}</span>`;
+  return `<a href="${hashFor(d.path)}" class="group flex items-center gap-3 p-3 rounded-xl border border-ink-700 bg-ink-850 hover:border-accent/50 hover:bg-ink-800 transition">
+    ${thumb}
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5">
+        ${d.conf.pinned ? `<span class="text-accent-soft">${icon('pin', 'w-3 h-3')}</span>` : ''}
+        <span class="truncate text-sm font-medium text-zinc-200 group-hover:text-white" title="${esc(d.name)}">${esc(lab.text)}</span>
+      </div>
+      ${metaLine(st, 'text-[11px] mt-0.5')}
+      ${st.media ? progBar(d.path, st.media, 'h-[3px] mt-2') : ''}
+    </div>
+    <span class="text-zinc-600 group-hover:text-zinc-300 transition">${icon('chevron')}</span>
+  </a>`;
+}
+
+function lessonRow(m, i) {
+  const pos = positions[m.path];
+  return `<div class="lesson ${watched[m.path] ? 'is-watched' : ''}" data-row="${i}" data-watch="${esc(m.path)}">
+    <div class="flex items-center gap-3 px-3 sm:px-4 py-2.5 hover:bg-white/[.02]">
+      <button class="check" data-action="toggle-watched" data-i="${i}" title="Marcar como assistida">${icon('check', 'w-3 h-3')}</button>
+      <button class="flex flex-1 min-w-0 items-center gap-3 text-left" data-action="play" data-i="${i}">
+        <span class="lesson-num">${esc(m.num || String(i + 1).padStart(2, '0'))}</span>
+        <span class="lesson-title truncate text-sm text-zinc-200" title="${esc(m.name)}">${esc(m.title)}</span>
+      </button>
+      <span class="hidden sm:flex items-center gap-2 shrink-0 text-[11px] text-zinc-500">
+        ${pos ? `<span class="inline-flex items-center gap-1 text-accent-soft/80" title="Parou em">${icon('clock', 'w-3 h-3')}${fmtTime(pos)}</span>` : ''}
+        ${m.subtitles.length ? '<span class="badge" title="Legendas disponíveis">CC</span>' : ''}
+        <span class="badge">${esc(m.ext.slice(1))}</span>
+        <span class="w-16 text-right tabular-nums">${fmtSize(m.size)}</span>
+      </span>
+      <button class="ibtn text-zinc-300" data-action="play" data-i="${i}" title="Reproduzir">${icon(m.kind === 'audio' ? 'music' : 'play', 'w-4 h-4')}</button>
+    </div>
+  </div>`;
+}
+
+function fileIcon(f) {
+  if (f.kind === 'image') return 'image';
+  if (f.kind === 'video') return 'film';
+  if (f.kind === 'audio') return 'music';
+  if (f.ext === '.pdf') return 'file';
+  if (f.text) return ['.txt', '.md', '.markdown', '.rst', '.log', '.csv', ''].includes(f.ext) ? 'file' : 'code';
+  return 'box';
+}
+function fileTile(f, list, i) {
+  const ext = (f.ext || '').slice(1) || 'txt';
+  return `<div class="group flex items-center gap-3 p-3 rounded-xl border border-ink-700 bg-ink-850 hover:border-accent/50 hover:bg-ink-800 transition cursor-pointer"
+               data-action="preview" data-list="${list}" data-i="${i}" title="${esc(f.name)}">
+    <span class="ficon grid place-items-center w-10 h-10 rounded-lg shrink-0" style="--h:${hue(ext) }">${icon(fileIcon(f), 'w-5 h-5')}</span>
+    <div class="min-w-0 flex-1">
+      <div class="truncate text-sm text-zinc-200 group-hover:text-white">${esc(f.name)}</div>
+      <div class="text-[11px] text-zinc-500 uppercase tracking-wide">${esc(ext)} · ${fmtSize(f.size)}</div>
+    </div>
+    <div class="flex items-center opacity-70 group-hover:opacity-100 transition">
+      <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${icon('external')}</a>
+      <a class="ibtn" href="${fileUrl(f.path, 1)}" title="Baixar">${icon('download')}</a>
+    </div>
+  </div>`;
+}
+
+function section(iconName, title, count, inner, extra = '') {
+  return `<section class="mb-10">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <h2 class="section-title">${icon(iconName, 'w-3.5 h-3.5')}${title}<span class="count">${count}</span></h2>${extra}
+    </div>${inner}</section>`;
+}
+
+function fileSections(d) {
+  let html = '';
+  if (d.media.length) {
+    const tools = `<div class="flex items-center gap-2 text-xs text-zinc-400">
+      <label class="inline-flex items-center gap-2 cursor-pointer select-none mr-2">
+        <input type="checkbox" data-action="autoplay" class="accent-[#8b7cf6]" ${prefs.autoplay ? 'checked' : ''}> Autoplay
+      </label>
+      <button class="btn" data-action="mark-all">${icon('check', 'w-3.5 h-3.5')} Marcar todas</button></div>`;
+    html += section('film', 'Aulas', d.media.length,
+      `<div class="rounded-xl border border-ink-700 bg-ink-850 divide-y divide-ink-700/70 overflow-hidden">${d.media.map(lessonRow).join('')}</div>`, tools);
+  }
+  if (d.docs.length) html += section('book', 'Materiais de apoio', d.docs.length,
+    `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${d.docs.map((f, i) => fileTile(f, 'docs', i)).join('')}</div>`);
+  if (d.images.length) html += section('image', 'Imagens', d.images.length,
+    `<div class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">${d.images.map((f, i) =>
+      `<button class="group relative aspect-video rounded-lg overflow-hidden border border-ink-700 bg-ink-850 hover:border-accent/50" data-action="preview" data-list="images" data-i="${i}" title="${esc(f.name)}">
+        <img src="${fileUrl(f.path)}" alt="" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-[1.03] transition duration-300">
+        <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 px-2 pb-1.5 pt-4 text-left text-[11px] text-zinc-200">${esc(f.name)}</span>
+      </button>`).join('')}</div>`);
+  if (d.others.length) html += section('box', 'Outros arquivos', d.others.length,
+    `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${d.others.map((f, i) => fileTile(f, 'others', i)).join('')}</div>`);
+  return html;
+}
+
+/* ------------------------------------------------------------------ */
+/* Views                                                                */
+/* ------------------------------------------------------------------ */
+function renderCrumbs(d) {
+  const last = d.breadcrumbs.length - 1;
+  $('#crumbs').innerHTML = d.breadcrumbs.map((c, i) => {
+    const label = i === 0 ? `${icon('home', 'w-3.5 h-3.5')}<span>${esc(c.title)}</span>` : `<span class="truncate max-w-[32ch]">${esc(c.title)}</span>`;
+    const sep = i ? `<span class="text-zinc-700">${icon('chevron', 'w-3 h-3')}</span>` : '';
+    return i === last
+      ? `${sep}<span class="inline-flex items-center gap-1.5 text-zinc-200">${label}</span>`
+      : `${sep}<a href="${hashFor(c.path)}" class="inline-flex items-center gap-1.5 hover:text-zinc-200 transition">${label}</a>`;
+  }).join('');
+}
+
+function renderRoot(d) {
+  const counts = new Map();
+  d.dirs.forEach(x => x.conf.tags.forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
+  const tags = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  for (const t of S.activeTags) if (!counts.has(t)) S.activeTags.delete(t);
+  const visible = d.dirs.filter(x => [...S.activeTags].every(t => x.conf.tags.includes(t)));
+  const pinned = visible.filter(x => x.conf.pinned), rest = visible.filter(x => !x.conf.pinned);
+  const all = progress('', d.stats.media);
+  const last = store.get('last', null);
+
+  let html = `<section class="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-[.2em] text-accent-soft/80">Biblioteca local</p>
+      <h1 class="mt-1 text-3xl sm:text-4xl font-bold tracking-tight text-zinc-50">${esc(d.hub.title)}</h1>
+      ${d.conf.description ? `<p class="mt-2 max-w-2xl text-sm text-zinc-400">${esc(d.conf.description)}</p>` : ''}
+    </div>
+    <div class="grid grid-cols-3 gap-2 sm:gap-3 text-center">
+      ${[[d.dirs.length, 'cursos'], [d.stats.media, 'aulas'], [d.stats.docs, 'materiais']].map(([n, l]) =>
+        `<div class="rounded-xl border border-ink-700 bg-ink-850 px-4 py-2.5"><div class="text-xl font-semibold text-zinc-100 tabular-nums">${n}</div><div class="text-[11px] text-zinc-500">${l}</div></div>`).join('')}
+    </div>
+  </section>`;
+
+  if (d.stats.media) html += `<div class="mb-8 flex items-center gap-4">
+      <div class="flex-1">${progBar('', d.stats.media, 'h-1.5')}</div>
+      <span class="text-xs text-zinc-500 tabular-nums" data-prog-label="" data-total="${d.stats.media}">${progText(all)}</span></div>`;
+
+  if (last && last.path) {
+    const name = last.path.split('/').pop();
+    html += `<a href="${hashFor(last.folder, { play: name })}" class="group mb-8 flex items-center gap-4 rounded-xl border border-accent/25 bg-gradient-to-r from-accent/10 to-transparent p-3 pr-4 hover:border-accent/50 transition">
+      <span class="grid place-items-center w-10 h-10 rounded-full bg-accent text-white shadow-lg shadow-accent/30">${icon('play', 'w-4 h-4')}</span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] uppercase tracking-wider text-accent-soft/90">Continuar assistindo</div>
+        <div class="truncate text-sm font-medium text-zinc-100">${esc(last.title)}</div>
+        <div class="truncate text-xs text-zinc-500">${esc(last.folderTitle || last.folder)}${positions[last.path] ? ` · parou em ${fmtTime(positions[last.path])}` : ''}</div>
+      </div>
+      <span class="text-zinc-500 group-hover:text-zinc-200">${icon('chevron')}</span></a>`;
+  }
+
+  if (tags.length) html += `<div class="mb-8 flex flex-wrap items-center gap-2">
+      <span class="mr-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">${icon('tag', 'w-3.5 h-3.5')} Filtrar</span>
+      ${tags.map(([t, n]) => tagChip(t, n)).join('')}
+      ${S.activeTags.size ? `<button class="ml-1 text-xs text-zinc-400 hover:text-white underline underline-offset-4" data-action="clear-tags">limpar</button>` : ''}
+    </div>`;
+
+  const grid = items => `<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">${items.map(courseCard).join('')}</div>`;
+  if (pinned.length) html += section('pin', 'Fixados', pinned.length, grid(pinned));
+  if (rest.length) html += section('layers', pinned.length ? 'Todos os cursos' : 'Cursos', rest.length, grid(rest));
+  if (!visible.length) html += d.dirs.length
+    ? empty('Nenhum curso com essas tags.', `<button class="btn mt-4" data-action="clear-tags">Limpar filtros</button>`)
+    : empty('Nenhuma pasta encontrada na raiz.', `<code class="mt-2 block text-xs text-zinc-500">${esc(d.hub.root)}</code>`);
+  html += fileSections(d);
+  $('#app').innerHTML = html;
+}
+
+function renderFolder(d) {
+  const c = d.conf, st = d.stats, p = progress(d.path, st.media), lab = dirLabel(d);
+  const last = store.get('last', null);
+  let html = '';
+
+  if (d.siblings.length > 1) html += `<nav class="-mx-4 px-4 mb-5 overflow-x-auto no-scrollbar"><div class="flex gap-2 w-max">
+    ${d.siblings.map(s => { const l = dirLabel(s); return `<a href="${hashFor(s.path)}" class="pill ${s.path === d.path ? 'pill-active' : ''}" title="${esc(s.name)}">
+      ${l.num ? `<span class="font-mono opacity-60">${esc(l.num)}</span>` : ''}${esc(l.text)}</a>`; }).join('')}</div></nav>`;
+
+  const firstTodo = d.media.findIndex(m => !watched[m.path]);
+  const resume = last && last.folder !== d.path && (d.path === '' || last.folder.startsWith(d.path + '/'));
+  html += `<header class="relative mb-8 overflow-hidden rounded-2xl border border-ink-700">
+    ${cover(d, { monogram: false })}
+    <div class="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/85 to-ink-950/40"></div>
+    <div class="relative flex min-h-[200px] flex-col justify-end gap-4 p-5 sm:p-8">
+      ${d.parent != null ? `<a href="${hashFor(d.parent)}" class="inline-flex w-max items-center gap-1 text-xs text-zinc-400 hover:text-white">${icon('back', 'w-3.5 h-3.5')} Voltar</a>` : ''}
+      <div>
+        <h1 class="flex items-baseline gap-3 text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">
+          ${lab.num ? `<span class="font-mono text-lg text-accent-soft/80">${esc(lab.num)}</span>` : ''}<span>${esc(lab.text)}</span>
+          ${c.pinned ? `<span class="text-accent-soft" title="Fixado">${icon('pin', 'w-4 h-4')}</span>` : ''}</h1>
+        ${c.description ? `<p class="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-300/90">${esc(c.description)}</p>` : ''}
+      </div>
+      ${c.tags.length ? `<div class="flex flex-wrap gap-1.5">${c.tags.map(t => tagChip(t)).join('')}</div>` : ''}
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+        ${metaLine(st, 'text-xs')}
+        ${st.media ? `<div class="flex items-center gap-3"><div class="w-40">${progBar(d.path, st.media, 'h-1.5')}</div>
+          <span class="text-xs text-zinc-400 tabular-nums" data-prog-label="${esc(d.path)}" data-total="${st.media}">${progText(p)}</span></div>` : ''}
+        ${c.status ? statusChip(c, p) : ''}
+      </div>
+      ${d.media.length || resume ? `<div class="flex flex-wrap gap-2">
+        ${d.media.length ? `<button class="btn-primary" data-action="continue">${icon('play', 'w-4 h-4')} ${firstTodo === -1 ? 'Rever do início' : firstTodo === 0 && !p.done ? 'Começar' : 'Continuar'}</button>` : ''}
+        ${resume ? `<a class="btn h-9 px-3 text-sm max-w-full" href="${hashFor(last.folder, { play: last.path.split('/').pop() })}">${icon('clock', 'w-4 h-4')}<span class="truncate">Continuar: ${esc(last.title)}</span></a>` : ''}
+      </div>` : ''}
+    </div>
+  </header>`;
+
+  if (d.dirs.length) html += section('layers', 'Módulos', d.dirs.length,
+    `<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">${d.dirs.map(moduleCard).join('')}</div>`);
+  html += fileSections(d);
+  if (!d.dirs.length && !d.media.length && !d.docs.length && !d.images.length && !d.others.length) html += empty('Esta pasta está vazia.');
+  $('#app').innerHTML = html;
+  $('.pill-active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+
+function empty(msg, extra = '') {
+  return `<div class="grid place-items-center rounded-2xl border border-dashed border-ink-700 py-16 text-center">
+    <div><div class="mx-auto mb-3 grid place-items-center w-12 h-12 rounded-full bg-ink-800 text-zinc-500">${icon('folder', 'w-5 h-5')}</div>
+    <p class="text-sm text-zinc-400">${msg}</p>${extra}</div></div>`;
+}
+
+function renderView(d) {
+  renderCrumbs(d);
+  $('#hub-title').textContent = d.hub.title;
+  document.title = d.path ? `${d.title} · ${d.hub.title}` : d.hub.title;
+  if (d.path) renderFolder(d); else renderRoot(d);
+}
+
+function renderLoading() {
+  $('#app').innerHTML = `<div class="animate-pulse">
+    <div class="mb-8 h-40 rounded-2xl bg-ink-850"></div>
+    <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">${'<div class="h-64 rounded-xl bg-ink-850"></div>'.repeat(6)}</div></div>`;
+}
+function renderError(err) {
+  $('#crumbs').innerHTML = `<a href="#/" class="inline-flex items-center gap-1.5 hover:text-zinc-200">${icon('home', 'w-3.5 h-3.5')} Início</a>`;
+  $('#app').innerHTML = `<div class="grid place-items-center py-24 text-center"><div>
+    <p class="text-lg font-semibold text-zinc-200">Não foi possível abrir esta pasta</p>
+    <p class="mt-1 text-sm text-zinc-500">${esc(err.message)}</p>
+    <a href="#/" class="btn-primary mt-6">${icon('home')} Voltar ao início</a></div></div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Roteamento (hash)                                                    */
+/* ------------------------------------------------------------------ */
+async function route({ force = false } = {}) {
+  const { path, params } = parseHash();
+  closeModal();
+  if (S.query) clearSearch();
+  if (!force && S.data && S.data.path === path) { applyParams(params); return; }
+
+  closePlayer();
+  S.path = path;
+  const seq = ++S.routeSeq;
+  const slow = setTimeout(renderLoading, 150);
+  try {
+    const d = await api(`/api/list?path=${enc(path)}`);
+    if (seq !== S.routeSeq) return;
+    S.data = d;
+    if (!path) S.activeTags = new Set((params.get('tag') || '').split(',').filter(Boolean));
+    renderView(d);
+    if (!force) window.scrollTo(0, 0);
+    applyParams(params, true);
+  } catch (e) {
+    if (seq === S.routeSeq) { S.data = null; renderError(e); }
+  } finally { clearTimeout(slow); }
+}
+
+function applyParams(params, fresh = false) {
+  const d = S.data; if (!d) return;
+  if (!d.path && !fresh) {
+    const tags = new Set((params.get('tag') || '').split(',').filter(Boolean));
+    if ([...tags].join() !== [...S.activeTags].join()) { S.activeTags = tags; renderRoot(d); }
+  }
+  const play = params.get('play');
+  if (play) {
+    const i = d.media.findIndex(m => m.name === play);
+    if (i >= 0 && i !== S.playing) openPlayer(i);
+  }
+  const open = params.get('open');
+  if (open) {
+    for (const list of ['docs', 'images', 'others', 'media']) {
+      const f = d[list].find(x => x.name === open);
+      if (f) { history.replaceState(null, '', hashFor(d.path)); previewFile(f); break; }
+    }
+  }
+}
+
+function onTag(tag) {
+  if (S.data && !S.data.path) {
+    S.activeTags.has(tag) ? S.activeTags.delete(tag) : S.activeTags.add(tag);
+    history.replaceState(null, '', hashFor('', S.activeTags.size ? { tag: [...S.activeTags].join(',') } : null));
+    renderRoot(S.data);
+  } else {
+    go('', { tag });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Player sob demanda (um único <video> por vez)                        */
+/* ------------------------------------------------------------------ */
+function openPlayer(i, { autoplay = true } = {}) {
+  const d = S.data, m = d && d.media[i];
+  if (!m) return;
+  closePlayer();
+  S.playing = i;
+  const row = $(`[data-row="${i}"]`);
+  row.classList.add('is-playing');
+  const audio = m.kind === 'audio', tag = audio ? 'audio' : 'video';
+  const wrap = document.createElement('div');
+  wrap.id = 'player';
+  wrap.dataset.path = m.path;
+  wrap.className = 'border-t border-ink-700/70 bg-ink-950/60 p-3 sm:p-4';
+  wrap.innerHTML = `
+    <${tag} id="pv" controls preload="metadata" playsinline class="${audio ? 'w-full' : 'w-full max-h-[72vh] aspect-video rounded-lg bg-black'}">
+      ${m.subtitles.map((s, k) => `<track kind="subtitles" src="/api/subtitle?path=${enc(s.path)}" label="${esc(s.label)}" srclang="${esc(s.lang)}"${k === 0 ? ' default' : ''}>`).join('')}
+    </${tag}>
+    <div id="perr"></div>
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <button class="btn" data-action="prev" ${i === 0 ? 'disabled' : ''}>${icon('prev', 'w-3.5 h-3.5')} Anterior</button>
+      <button class="btn" data-action="next" ${i === d.media.length - 1 ? 'disabled' : ''}>Próxima ${icon('next', 'w-3.5 h-3.5')}</button>
+      <select class="btn pr-1 cursor-pointer" data-action="rate" title="Velocidade">
+        ${[0.75, 1, 1.25, 1.5, 1.75, 2].map(r => `<option value="${r}" ${r === prefs.rate ? 'selected' : ''}>${r}x</option>`).join('')}
+      </select>
+      ${!audio && document.pictureInPictureEnabled ? `<button class="btn" data-action="pip" title="Picture-in-Picture">${icon('pip', 'w-3.5 h-3.5')} PiP</button>` : ''}
+      ${!audio ? `<button class="btn" data-action="fullscreen" title="Tela cheia">${icon('expand', 'w-3.5 h-3.5')} Tela cheia</button>` : ''}
+      <span class="flex-1"></span>
+      <a class="btn" href="${fileUrl(m.path)}" target="_blank" rel="noopener">${icon('external', 'w-3.5 h-3.5')} Nova aba</a>
+      <a class="btn" href="${fileUrl(m.path, 1)}">${icon('download', 'w-3.5 h-3.5')} Baixar</a>
+      <button class="btn" data-action="close-player">${icon('x', 'w-3.5 h-3.5')} Fechar</button>
+    </div>`;
+  row.appendChild(wrap);
+
+  const v = $('#pv', wrap);
+  let lastSave = 0, marked = !!watched[m.path];
+  v.addEventListener('loadedmetadata', () => {
+    v.playbackRate = prefs.rate;
+    const pos = positions[m.path];
+    if (pos > 5 && pos < v.duration - 10) { v.currentTime = pos; toast(`Retomando de ${fmtTime(pos)}`); }
+  });
+  v.addEventListener('timeupdate', () => {
+    const now = Date.now();
+    if (now - lastSave > 4000) { lastSave = now; savePos(m.path, v.currentTime, v.duration); }
+    if (!marked && v.duration && v.currentTime / v.duration >= 0.9) { marked = true; setWatched(m.path, true); }
+  });
+  v.addEventListener('pause', () => savePos(m.path, v.currentTime, v.duration));
+  v.addEventListener('ratechange', () => {
+    prefs.rate = v.playbackRate; savePrefs();
+    const sel = $('[data-action="rate"]', wrap); if (sel) sel.value = String(v.playbackRate);
+  });
+  v.addEventListener('ended', () => {
+    setWatched(m.path, true);
+    delete positions[m.path]; store.set('pos', positions);
+    if (prefs.autoplay && i < d.media.length - 1) openPlayer(i + 1);
+  });
+  v.addEventListener('error', () => {
+    if (!v.getAttribute('src')) return;
+    $('#perr', wrap).innerHTML = `<div class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+      O navegador não conseguiu reproduzir este arquivo (codec/contêiner não suportado — comum em .mkv com HEVC/AC3).
+      <a class="underline" href="${fileUrl(m.path, 1)}">Baixe</a> e abra no VLC/mpv.</div>`;
+  });
+  v.src = fileUrl(m.path);
+  if (autoplay) v.play().catch(() => {});
+
+  row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  history.replaceState(null, '', hashFor(d.path, { play: m.name }));
+  store.set('last', { path: m.path, title: m.title, folder: d.path, folderTitle: d.title, at: Date.now() });
+}
+
+function closePlayer({ updateHash = false } = {}) {
+  const w = $('#player');
+  if (!w) { S.playing = -1; return; }
+  const v = $('#pv', w);
+  if (v) {
+    savePos(w.dataset.path, v.currentTime, v.duration);
+    if (document.pictureInPictureElement === v) document.exitPictureInPicture().catch(() => {});
+    v.pause(); v.removeAttribute('src'); v.load(); // libera a conexão de streaming
+  }
+  w.closest('.lesson')?.classList.remove('is-playing');
+  w.remove();
+  S.playing = -1;
+  if (updateHash && S.data) history.replaceState(null, '', hashFor(S.data.path));
+}
+
+/* ------------------------------------------------------------------ */
+/* Pré-visualização (modal)                                             */
+/* ------------------------------------------------------------------ */
+const LANGS = {
+  py: 'python', pyw: 'python', sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
+  asm: 'x86asm', s: 'x86asm', nasm: 'x86asm', inc: 'x86asm', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', hpp: 'cpp',
+  cs: 'csharp', java: 'java', kt: 'kotlin', go: 'go', rs: 'rust', rb: 'ruby', pl: 'perl', php: 'php', lua: 'lua',
+  js: 'javascript', mjs: 'javascript', ts: 'typescript', json: 'json', ipynb: 'json', yaml: 'yaml', yml: 'yaml',
+  toml: 'ini', ini: 'ini', cfg: 'ini', conf: 'ini', xml: 'xml', html: 'xml', htm: 'xml', css: 'css', sql: 'sql',
+  ps1: 'powershell', psm1: 'powershell', bat: 'dos', cmd: 'dos', md: 'markdown', markdown: 'markdown',
+  diff: 'diff', patch: 'diff', makefile: 'makefile',
+};
+function langFor(name) {
+  const e = extOf(name).slice(1) || name.toLowerCase();
+  const l = LANGS[e] || 'plaintext';
+  return window.hljs && hljs.getLanguage(l) ? l : 'plaintext';
+}
+
+function openModal({ title, sub = '', body = '', actions = '', size = 'lg' }) {
+  const m = $('#modal'), panel = $('#modal-panel');
+  panel.className = 'flex flex-col rounded-xl border border-ink-700 bg-ink-900 shadow-2xl shadow-black overflow-hidden ' +
+    (size === 'full' ? 'w-[96vw] h-[92vh]' : 'w-full max-w-5xl max-h-[90vh]');
+  $('#modal-title').textContent = title;
+  $('#modal-sub').textContent = sub;
+  $('#modal-actions').innerHTML = actions;
+  $('#modal-body').innerHTML = body;
+  m.classList.remove('hidden'); m.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal() {
+  const m = $('#modal');
+  if (m.classList.contains('hidden')) return;
+  m.classList.add('hidden'); m.classList.remove('flex');
+  $('#modal-body').innerHTML = '';
+  document.body.style.overflow = '';
+}
+const modalLinks = f => `
+  <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${icon('external')}</a>
+  <a class="ibtn" href="${fileUrl(f.path, 1)}" title="Baixar">${icon('download')}</a>`;
+
+async function previewFile(f) {
+  const sub = f.path.split('/').slice(0, -1).join(' / ') || 'Início';
+  if (f.kind === 'video' || f.kind === 'audio') { go(dirOf(f.path), { play: f.name }); return; }
+  if (f.kind === 'image') {
+    return openModal({ title: f.name, sub, actions: modalLinks(f), body:
+      `<div class="grid h-full place-items-center bg-black/40 p-4"><img src="${fileUrl(f.path)}" alt="${esc(f.name)}" class="max-h-[78vh] max-w-full rounded-lg"></div>` });
+  }
+  if (f.ext === '.pdf') {
+    return openModal({ title: f.name, sub, size: 'full', actions: modalLinks(f),
+      body: `<iframe src="${fileUrl(f.path)}" title="${esc(f.name)}" class="h-full w-full border-0 bg-ink-950"></iframe>` });
+  }
+  if (!f.text) { location.href = fileUrl(f.path, 1); toast('Baixando arquivo…'); return; }
+
+  openModal({ title: f.name, sub, actions: `<button class="ibtn" data-action="copy" title="Copiar conteúdo">${icon('copy')}</button>` + modalLinks(f),
+    body: '<div class="p-6 text-sm text-zinc-500 animate-pulse">Carregando…</div>' });
+  try {
+    const t = await api(`/api/text?path=${enc(f.path)}`);
+    if ($('#modal-title').textContent !== f.name) return;
+    S.modalText = t.content;
+    const warn = t.truncated ? `<div class="border-b border-amber-500/20 bg-amber-500/10 px-5 py-2 text-xs text-amber-200">Exibindo os primeiros 2 MB de ${fmtSize(t.size)}. Baixe para ver o arquivo completo.</div>` : '';
+    const lang = langFor(f.name);
+    const body = $('#modal-body');
+    if (lang === 'markdown' && window.marked && window.DOMPurify) {
+      body.innerHTML = warn + `<div class="flex justify-end px-5 pt-3"><button class="btn" data-action="md-toggle">${icon('code', 'w-3.5 h-3.5')} Ver código</button></div>
+        <article id="md-view" class="prose prose-invert prose-zinc prose-sm sm:prose-base max-w-none px-6 pb-10 pt-1 prose-a:text-accent-soft prose-headings:text-zinc-100">${DOMPurify.sanitize(marked.parse(t.content))}</article>
+        <div id="md-raw" class="hidden">${codeBlock(t.content, 'markdown')}</div>`;
+      fixRelativeLinks($('#md-view'), dirOf(f.path));
+      $$('#md-view pre code').forEach(el => window.hljs && hljs.highlightElement(el));
+    } else {
+      body.innerHTML = warn + codeBlock(t.content, lang);
+    }
+    $$('code[data-hl]', body).forEach(el => { if (window.hljs && el.textContent.length < 400000) hljs.highlightElement(el); });
+  } catch (e) {
+    $('#modal-body').innerHTML = `<div class="p-6 text-sm text-red-300">${esc(e.message)}</div>`;
+  }
+}
+function codeBlock(text, lang) {
+  text = text.replace(/\r?\n$/, '');
+  const n = text.split('\n').length;
+  const nums = Array.from({ length: n }, (_, i) => i + 1).join('\n');
+  return `<div class="flex min-w-max font-mono text-[12.5px] leading-6">
+    <pre class="sticky left-0 select-none border-r border-ink-700 bg-ink-900 px-3 py-4 text-right text-zinc-600">${nums}</pre>
+    <pre class="flex-1 px-4 py-4"><code data-hl class="language-${lang}">${esc(text)}</code></pre></div>`;
+}
+function fixRelativeLinks(root, base) {
+  $$('img[src]', root).forEach(img => {
+    const s = img.getAttribute('src');
+    if (!/^([a-z]+:|\/|#)/i.test(s)) img.src = fileUrl(joinPath(base, s));
+  });
+  $$('a[href]', root).forEach(a => {
+    const h = a.getAttribute('href');
+    if (h.startsWith('#')) return;
+    a.target = '_blank'; a.rel = 'noopener';
+    if (!/^([a-z]+:|\/)/i.test(h)) a.href = fileUrl(joinPath(base, h));
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Busca global                                                         */
+/* ------------------------------------------------------------------ */
+const qInput = $('#q');
+let searchTimer;
+
+function onSearchInput() {
+  S.query = qInput.value.trim();
+  clearTimeout(searchTimer);
+  if (!S.query) { hideSearch(); return; }
+  searchTimer = setTimeout(runSearch, 150);
+}
+async function runSearch() {
+  const seq = ++S.searchSeq;
+  const scope = S.scopeLocal && S.path ? S.path : '';
+  try {
+    const r = await api(`/api/search?q=${enc(S.query)}&path=${enc(scope)}`);
+    if (seq !== S.searchSeq || !S.query) return;
+    S.results = r.results;
+    renderSearch(r);
+  } catch (e) { toast('Erro na busca: ' + e.message); }
+}
+function hideSearch() {
+  $('#search-view').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  S.results = [];
+}
+function clearSearch() {
+  qInput.value = ''; S.query = ''; clearTimeout(searchTimer); S.searchSeq++;
+  hideSearch();
+}
+function renderSearch(r) {
+  const groups = [
+    ['Pastas', 'folder', x => x.type === 'dir'],
+    ['Aulas', 'film', x => x.type === 'video' || x.type === 'audio'],
+    ['Materiais', 'book', x => x.type === 'doc'],
+    ['Imagens', 'image', x => x.type === 'image'],
+    ['Outros', 'box', x => x.type === 'other'],
+  ];
+  const q = S.query;
+  let html = `<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div><p class="text-[11px] font-semibold uppercase tracking-[.2em] text-zinc-500">Busca</p>
+      <h1 class="mt-1 text-2xl font-semibold text-zinc-100">“${esc(q)}” <span class="text-base font-normal text-zinc-500">${r.results.length}${r.results.length >= r.limit ? '+' : ''} resultado(s)</span></h1></div>
+    ${S.path ? `<label class="inline-flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+      <input type="checkbox" data-action="scope" class="accent-[#8b7cf6]" ${S.scopeLocal ? 'checked' : ''}> Somente em <b class="font-medium text-zinc-200">${esc(S.data ? S.data.title : S.path)}</b></label>` : ''}
+  </div>`;
+  if (!r.results.length) html += empty('Nada encontrado. Tente outro termo ou uma tag.');
+  for (const [label, ic, fn] of groups) {
+    const items = r.results.map((x, i) => [x, i]).filter(([x]) => fn(x));
+    if (!items.length) continue;
+    html += section(ic, label, items.length, `<div class="rounded-xl border border-ink-700 bg-ink-850 p-1.5">${items.map(([x, i]) => {
+      const where = x.parent ? x.parent.split('/').join(' › ') : 'Início';
+      const ext = extOf(x.name).slice(1);
+      return `<button class="result" data-action="result" data-i="${i}">
+        <span class="ficon grid place-items-center w-8 h-8 rounded-md shrink-0" style="--h:${hue(x.type === 'dir' ? x.title : ext)}">${icon(x.type === 'dir' ? 'folder' : fileIcon({ ...x, kind: x.type }), 'w-4 h-4')}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm text-zinc-200">${x.num && x.type !== 'dir' ? `<span class="mr-1.5 font-mono text-xs text-zinc-500">${esc(x.num)}</span>` : ''}${hl(x.type === 'dir' || x.type === 'video' || x.type === 'audio' ? x.title : x.name, q)}</span>
+          <span class="block truncate text-[11px] text-zinc-500">${esc(where)}</span>
+        </span>
+        ${x.tags && x.tags.length ? `<span class="hidden md:flex gap-1">${x.tags.slice(0, 4).map(t => `<span class="tag" style="--h:${hue(t)}">${hl(t, q)}</span>`).join('')}</span>` : ''}
+        ${ext && x.type !== 'dir' ? `<span class="badge hidden sm:inline-flex">${esc(ext)}</span>` : ''}
+      </button>`; }).join('')}</div>`);
+  }
+  $('#search-view').innerHTML = html;
+  $('#app').classList.add('hidden');
+  $('#search-view').classList.remove('hidden');
+}
+function openResult(x) {
+  if (!x) return;
+  clearSearch();
+  if (x.type === 'dir') go(x.path);
+  else if (x.type === 'video' || x.type === 'audio') go(x.parent, { play: x.name });
+  else go(x.parent, { open: x.name });
+}
+
+/* ------------------------------------------------------------------ */
+/* Eventos                                                              */
+/* ------------------------------------------------------------------ */
+async function handleAction(el) {
+  const a = el.dataset.action, i = +el.dataset.i, d = S.data;
+  const v = $('#pv');
+  switch (a) {
+    case 'play': if (S.playing === i) closePlayer({ updateHash: true }); else openPlayer(i); break;
+    case 'toggle-watched': { const p = d.media[i].path; setWatched(p, !watched[p]); break; }
+    case 'mark-all': {
+      const all = d.media.every(m => watched[m.path]);
+      d.media.forEach(m => { if (all) delete watched[m.path]; else watched[m.path] = Date.now(); });
+      store.set('watched', watched); refreshProgressUI();
+      toast(all ? 'Aulas desmarcadas' : 'Todas as aulas marcadas como assistidas');
+      break;
+    }
+    case 'continue': { const k = d.media.findIndex(m => !watched[m.path]); openPlayer(k === -1 ? 0 : k); break; }
+    case 'prev': if (S.playing > 0) openPlayer(S.playing - 1); break;
+    case 'next': if (S.playing < d.media.length - 1) openPlayer(S.playing + 1); break;
+    case 'pip': v && v.requestPictureInPicture().catch(e => toast('PiP indisponível: ' + e.message)); break;
+    case 'fullscreen': v && (v.requestFullscreen ? v.requestFullscreen() : v.webkitEnterFullscreen?.()); break;
+    case 'close-player': closePlayer({ updateHash: true }); break;
+    case 'preview': previewFile(d[el.dataset.list][i]); break;
+    case 'result': openResult(S.results[i]); break;
+    case 'close-modal': closeModal(); break;
+    case 'copy':
+      try { await navigator.clipboard.writeText(S.modalText); toast('Conteúdo copiado'); } catch { toast('Não foi possível copiar'); }
+      break;
+    case 'md-toggle': {
+      const raw = $('#md-raw').classList.toggle('hidden');
+      $('#md-view').classList.toggle('hidden', !raw);
+      el.innerHTML = raw ? `${icon('code', 'w-3.5 h-3.5')} Ver código` : `${icon('eye', 'w-3.5 h-3.5')} Ver renderizado`;
+      break;
+    }
+    case 'clear-tags':
+      S.activeTags.clear(); history.replaceState(null, '', '#/'); renderRoot(d); break;
+    case 'refresh':
+      try {
+        const r = await api('/api/refresh', { method: 'POST' });
+        toast(`Índice atualizado · ${r.folders} pastas, ${r.entries} itens`);
+        route({ force: true });
+      } catch (e) { toast('Falha ao reindexar: ' + e.message); }
+      break;
+  }
+}
+
+document.addEventListener('click', e => {
+  const tag = e.target.closest('[data-tag]');
+  if (tag) { e.preventDefault(); e.stopPropagation(); onTag(tag.dataset.tag); return; }
+  if (e.target.closest('a[href]')) return;            // links seguem o comportamento padrão
+  const act = e.target.closest('[data-action]');
+  if (act && !['INPUT', 'SELECT'].includes(act.tagName)) { handleAction(act); return; }
+  const nav = e.target.closest('[data-nav]');
+  if (nav) go(nav.dataset.nav);
+});
+
+document.addEventListener('change', e => {
+  const a = e.target.dataset.action;
+  if (a === 'autoplay') { prefs.autoplay = e.target.checked; savePrefs(); }
+  else if (a === 'rate') { prefs.rate = +e.target.value; savePrefs(); const v = $('#pv'); if (v) v.playbackRate = prefs.rate; }
+  else if (a === 'scope') { S.scopeLocal = e.target.checked; runSearch(); }
+});
+
+$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+
+qInput.addEventListener('input', onSearchInput);
+qInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); openResult(S.results[0]); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); $('#search-view .result')?.focus(); }
+  else if (e.key === 'Escape') { clearSearch(); qInput.blur(); }
+});
+
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+  if (e.key === 'Escape') {
+    if (!$('#modal').classList.contains('hidden')) closeModal();
+    else if (S.query) clearSearch();
+    return;
+  }
+  if (!typing && (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'))) {
+    e.preventDefault(); qInput.focus(); qInput.select(); return;
+  }
+  const res = document.activeElement?.closest?.('.result');
+  if (res && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault();
+    const all = $$('#search-view .result'), k = all.indexOf(res) + (e.key === 'ArrowDown' ? 1 : -1);
+    if (k < 0) qInput.focus(); else all[Math.min(k, all.length - 1)].focus();
+  }
+  if (e.key === 'Enter' && !typing && document.activeElement?.matches?.('[data-nav]')) go(document.activeElement.dataset.nav);
+});
+
+window.addEventListener('hashchange', () => route());
+window.addEventListener('pagehide', () => closePlayer());
+
+document.addEventListener('DOMContentLoaded', () => {
+  $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
+  route();
+});
+</script>
+</body>
+</html>

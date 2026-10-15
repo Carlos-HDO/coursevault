@@ -7,7 +7,7 @@ cards por curso, tags clicáveis, busca instantânea, player de vídeo com seek 
 progresso por aula e pré-visualização de PDFs, Markdown e código.
 
 Sem banco de dados e sem build de Node: um `server.py` (FastAPI) + um `index.html`
-(Tailwind via CDN + JavaScript puro). A interface está em **português e inglês**: use o botão
+(JavaScript puro, com o CSS do Tailwind, as fontes e as bibliotecas prontos em `static/`, então funciona sem internet). A interface está em **português e inglês**: use o botão
 de idioma no canto superior direito.
 
 ![Dashboard do CourseVault](assets/dashboard.png)
@@ -120,13 +120,26 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 - `--password` pede uma senha e exige login para ver qualquer coisa, inclusive vídeos e a API. A sessão é um cookie `HttpOnly` e `SameSite=Strict` válido por 30 dias (sobrevive a reinícios e cai quando a senha muda); 5 tentativas erradas bloqueiam aquele endereço por 60 segundos. A conexão é HTTP simples: a senha barra outras pessoas da rede, mas não protege contra quem captura o tráfego.
 - Nomes com `/ \ < > : " | ? *`, começando com ponto ou terminando em ponto são recusados (compatível com NTFS). A raiz, a `.lixeira` e os arquivos do app não podem ser alterados.
 - Só vídeo, áudio, imagens, PDF, legendas e texto são exibidos no navegador. Código web (`.html`, `.xhtml`, `.shtml`, `.js`, `.xml`) é servido como texto puro, SVG com CSP `sandbox` e qualquer outro tipo (ex.: `.xht`, `.svgz`, `.rss`) como download, para que nenhum material execute script na origem do app.
-- Os scripts de highlight.js, marked e DOMPurify vindos do CDN são conferidos com SRI (`integrity`). O Tailwind está fixado numa versão exata, mas o CDN dele não suporta SRI.
+- Scripts, estilos e fontes vêm todos de `static/`: nada é carregado de sites de terceiros. O `tools/update_static.py` confere o hash de tudo o que baixa.
 
 ## Observações
 
 - **MKV:** o navegador só toca se o codec for suportado (H.264/VP9/AV1 + AAC/Opus). MKV com HEVC ou AC3 mostra um aviso com link de download para abrir no VLC/mpv.
-- **Offline:** Tailwind, highlight.js e marked vêm de CDN. Sem internet o app funciona, mas sem estilo.
+- **Offline:** tudo o que a página usa (CSS, fontes Inter/JetBrains Mono, highlight.js, marked, DOMPurify) está em `static/`, então o app funciona igual sem internet.
 - **Arquivos novos** aparecem na hora na listagem. As contagens e a busca se atualizam em até `--ttl` segundos, ou na hora pelo botão ⟳ (reindexar).
+
+## Desenvolvimento
+
+A pasta `static/` é gerada pelo `tools/update_static.py` (só biblioteca padrão do Python):
+
+```bash
+python tools/update_static.py --css   # depois de mudar classes do Tailwind no index.html
+python tools/update_static.py         # também confere/baixa as bibliotecas e fontes
+```
+
+O CSS é gerado com o binário standalone do Tailwind (v3.4.16, sem precisar de Node), baixado uma vez
+para `~/.cache/coursevault-build` e conferido pelo SHA-256 do release. O tema fica em
+`tools/tailwind.config.js` e as classes de componentes (`.btn`, `.card`…) em `tools/tailwind.css`.
 
 ## API
 

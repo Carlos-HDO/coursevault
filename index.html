@@ -5,36 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CourseVault</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%238b7cf6'/%3E%3Cpath d='M7 6.5v11l9-5.5z' fill='white'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-<!-- Tailwind: versão exata fixada. Esse CDN não envia CORS, então não aceita SRI (integrity). -->
-<script src="https://cdn.tailwindcss.com/3.4.16?plugins=typography@0.5.16"></script>
-<script>
-  tailwind.config = {
-    theme: {
-      extend: {
-        fontFamily: {
-          sans: ['Inter', 'system-ui', 'sans-serif'],
-          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
-        },
-        colors: {
-          ink: { 950: '#0f0f11', 900: '#141416', 850: '#18181b', 800: '#1e1e22', 700: '#2a2a30', 600: '#36363d', 500: '#4b4b55' },
-          accent: { DEFAULT: '#8b7cf6', soft: '#b3a8ff', deep: '#6d5ce8' },
-        },
-      },
-    },
-  };
-</script>
-
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" integrity="sha384-oaMLBGEzBOJx3UHwac0cVndtX5fxGQIfnAeFZ35RTgqPcYlbprH9o9PUV/F8Le07" crossorigin="anonymous" referrerpolicy="no-referrer">
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/x86asm.min.js" integrity="sha384-eKsHYF6apOh4wN/zUOnYUx5s4086rCTH2ZG0R09R49HLu6/1Kn/6J7Zn6M8++8On" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/powershell.min.js" integrity="sha384-LWJZQx0dgGhEK7snfNYrQs5K+QKD1sOmE02sOQCz4br9UmqSJDvPLoUVFaUyFnjq" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dos.min.js" integrity="sha384-6+/BHm9a7L7KFZE/myAKBddEjwfPovVtBzDrEu/6VqocfSqvRMyM+Lf3k9n89yGH" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js" integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- Tudo local (funciona sem internet). static/ é gerada por tools/update_static.py. -->
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/vendor/atom-one-dark.min.css">
+<script defer src="/static/vendor/highlight.min.js"></script>
+<script defer src="/static/vendor/x86asm.min.js"></script>
+<script defer src="/static/vendor/powershell.min.js"></script>
+<script defer src="/static/vendor/dos.min.js"></script>
+<script defer src="/static/vendor/marked.min.js"></script>
+<script defer src="/static/vendor/purify.min.js"></script>
 
 <style>
   :root { color-scheme: dark; }
@@ -88,27 +67,6 @@
   .btn.is-on { border-color: rgba(139, 124, 246, .6); background: rgba(139, 124, 246, .18); color: #fff; }
 </style>
 
-<style type="text/tailwindcss">
-  @layer components {
-    .btn { @apply inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-ink-700 bg-ink-800 text-zinc-300 text-xs font-medium hover:bg-ink-700 hover:text-white transition disabled:opacity-40 disabled:pointer-events-none; }
-    .btn-primary { @apply inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-deep transition shadow-lg shadow-accent/20 disabled:opacity-40 disabled:pointer-events-none disabled:shadow-none; }
-    .ibtn { @apply inline-grid place-items-center w-8 h-8 rounded-md text-zinc-400 hover:text-white hover:bg-ink-700 transition; }
-    .section-title { @apply flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-400; }
-    .count { @apply ml-1 rounded-full bg-ink-700 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 tracking-normal; }
-    .tag { @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium transition; }
-    .pill { @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-ink-700 bg-ink-850 text-xs text-zinc-400 whitespace-nowrap hover:text-white hover:border-ink-500 transition; }
-    .pill-active { @apply border-accent/60 bg-accent/15 text-white; }
-    .card { @apply flex flex-col rounded-xl overflow-hidden border border-ink-700 bg-ink-850 cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-2xl hover:shadow-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent; }
-    .badge { @apply inline-flex items-center rounded border border-ink-600 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-zinc-400; }
-    .check { @apply grid place-items-center w-5 h-5 shrink-0 rounded-full border border-zinc-600 text-transparent hover:border-accent hover:text-accent-soft transition; }
-    .lesson.is-watched .check { @apply bg-accent border-accent text-white; }
-    .lesson.is-watched .lesson-title { @apply text-zinc-500; }
-    .lesson.is-playing { @apply bg-accent/[.06]; }
-    .lesson.is-playing .lesson-num { @apply bg-accent text-white border-accent; }
-    .lesson-num { @apply grid place-items-center min-w-[2.25rem] h-6 px-1.5 rounded-md border border-ink-600 bg-ink-800 text-[11px] font-mono text-zinc-400 tabular-nums; }
-    .result { @apply w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-ink-800 focus:bg-ink-800 focus:outline-none focus:ring-1 focus:ring-accent/50 transition; }
-  }
-</style>
 </head>
 
 <body class="min-h-screen bg-ink-950 font-sans text-zinc-300">

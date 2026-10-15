@@ -37,4 +37,4 @@ packages = ["coursevault"]
 package-dir = { coursevault = "." }
 
 [tool.setuptools.package-data]
-coursevault = ["index.html"]
+coursevault = ["index.html", "static/*", "static/*/*"]

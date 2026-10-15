@@ -1,0 +1,24 @@
+/* Entrada do Tailwind: tools/update_static.py gera static/app.css a partir deste arquivo. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn { @apply inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-ink-700 bg-ink-800 text-zinc-300 text-xs font-medium hover:bg-ink-700 hover:text-white transition disabled:opacity-40 disabled:pointer-events-none; }
+  .btn-primary { @apply inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-deep transition shadow-lg shadow-accent/20 disabled:opacity-40 disabled:pointer-events-none disabled:shadow-none; }
+  .ibtn { @apply inline-grid place-items-center w-8 h-8 rounded-md text-zinc-400 hover:text-white hover:bg-ink-700 transition; }
+  .section-title { @apply flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-400; }
+  .count { @apply ml-1 rounded-full bg-ink-700 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 tracking-normal; }
+  .tag { @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium transition; }
+  .pill { @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-ink-700 bg-ink-850 text-xs text-zinc-400 whitespace-nowrap hover:text-white hover:border-ink-500 transition; }
+  .pill-active { @apply border-accent/60 bg-accent/15 text-white; }
+  .card { @apply flex flex-col rounded-xl overflow-hidden border border-ink-700 bg-ink-850 cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-2xl hover:shadow-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent; }
+  .badge { @apply inline-flex items-center rounded border border-ink-600 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-zinc-400; }
+  .check { @apply grid place-items-center w-5 h-5 shrink-0 rounded-full border border-zinc-600 text-transparent hover:border-accent hover:text-accent-soft transition; }
+  .lesson.is-watched .check { @apply bg-accent border-accent text-white; }
+  .lesson.is-watched .lesson-title { @apply text-zinc-500; }
+  .lesson.is-playing { @apply bg-accent/[.06]; }
+  .lesson.is-playing .lesson-num { @apply bg-accent text-white border-accent; }
+  .lesson-num { @apply grid place-items-center min-w-[2.25rem] h-6 px-1.5 rounded-md border border-ink-600 bg-ink-800 text-[11px] font-mono text-zinc-400 tabular-nums; }
+  .result { @apply w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-ink-800 focus:bg-ink-800 focus:outline-none focus:ring-1 focus:ring-accent/50 transition; }
+}

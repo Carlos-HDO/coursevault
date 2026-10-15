@@ -46,6 +46,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+from starlette.staticfiles import StaticFiles
 
 # --------------------------------------------------------------------------- #
 # Configuração
@@ -53,9 +54,10 @@ from starlette.concurrency import run_in_threadpool
 
 APP_DIR = Path(__file__).resolve().parent
 INDEX_HTML = APP_DIR / "index.html"
+STATIC_DIR = APP_DIR / "static"  # CSS, fontes e bibliotecas locais (tools/update_static.py)
 APP_FILES = {"server.py", "index.html", "requirements.txt", "course.conf.example", "cursos.sh",
              "README.md", "README.pt-BR.md", "assets", "pyproject.toml", "LICENSE",
-             "build", "dist", "coursevault.egg-info"}
+             "build", "dist", "coursevault.egg-info", "static", "tools"}
 
 ROOT: Path = Path(os.environ.get("HUB_ROOT", os.getcwd())).expanduser().resolve()
 FOLLOW_SYMLINKS = os.environ.get("HUB_FOLLOW_SYMLINKS") == "1"
@@ -115,7 +117,8 @@ for _ext, _mime in {
     ".mp4": "video/mp4", ".m4v": "video/mp4", ".mkv": "video/x-matroska", ".webm": "video/webm",
     ".mov": "video/quicktime", ".ogv": "video/ogg", ".m4a": "audio/mp4", ".opus": "audio/ogg",
     ".flac": "audio/flac", ".vtt": "text/vtt", ".webp": "image/webp", ".avif": "image/avif",
-    ".svg": "image/svg+xml", ".pdf": "application/pdf",
+    ".svg": "image/svg+xml", ".pdf": "application/pdf", ".woff2": "font/woff2",
+    ".css": "text/css", ".js": "text/javascript",
 }.items():
     mimetypes.add_type(_mime, _ext)
 
@@ -1014,6 +1017,21 @@ document.getElementById('f').addEventListener('submit', async e => {{
 
 app = FastAPI(title="CourseVault", docs_url="/api/docs", redoc_url=None)
 app.add_middleware(HostGuard)
+
+
+class AppStatic(StaticFiles):
+    """Arquivos do próprio app (não da biblioteca). no-cache: o navegador revalida pelo ETag e
+    pega a versão nova depois de um update."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
+
+
+if STATIC_DIR.is_dir():
+    app.mount("/static", AppStatic(directory=STATIC_DIR), name="static")
 
 
 def hub_title() -> str:

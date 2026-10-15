@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import argparse
 import errno
+import ipaddress
 import math
 import mimetypes
 import os
 import re
 import shutil
+import socket
 import threading
 import time
 import unicodedata
@@ -59,7 +61,8 @@ def tr(pt: str, en: str) -> str:
     return pt if _LANG.get() == "pt" else en
 HIDE_APP_FILES = APP_DIR == ROOT
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-# None = aceita qualquer Host (modo LAN). Protege contra DNS rebinding em modo local.
+# Nomes aceitos no header Host (anti DNS rebinding); IPs literais sempre passam.
+# None = aceita qualquer nome (--allow-host '*').
 ALLOWED_HOSTS: set[str] | None = set(LOOPBACK)
 
 CHUNK_SIZE = 1024 * 1024          # 1 MiB por bloco no streaming
@@ -179,17 +182,30 @@ def join_rel(parent: str, name: str) -> str:
     return f"{parent}/{name}" if parent else name
 
 
+def reachable(real: Path) -> bool:
+    """Destino real (já resolvido) que pode ser lido: dentro da raiz ou, com
+    --follow-symlinks, fora dela; nunca dentro de pasta/arquivo oculto (ex.: um
+    link para ~/.ssh/id_rsa)."""
+    if is_within(real, ROOT):
+        parts = real.relative_to(ROOT).parts
+    elif FOLLOW_SYMLINKS:
+        parts = real.parts[1:]
+    else:
+        return False
+    return not any(is_hidden(p) for p in parts)
+
+
 def visible_entry(e: os.DirEntry, parent_rel: str) -> bool:
     if is_hidden(e.name):
         return False
     if not parent_rel and HIDE_APP_FILES and e.name in APP_FILES:
         return False
-    if e.is_symlink() and not FOLLOW_SYMLINKS:
+    if e.is_symlink():
         try:
             real = Path(e.path).resolve(strict=True)
         except (OSError, RuntimeError):
             return False
-        return is_within(real, ROOT)
+        return reachable(real)
     return True
 
 
@@ -215,9 +231,27 @@ def safe_path(rel: str | None) -> tuple[Path, str]:
         real = target.resolve(strict=True)
     except (OSError, RuntimeError):
         raise HTTPException(404, tr("Não encontrado", "Not found")) from None
-    if not FOLLOW_SYMLINKS and not is_within(real, ROOT):
+    if not reachable(real):
         raise HTTPException(403, tr("Acesso negado", "Access denied"))
     return target, "/".join(parts)
+
+
+def require_inside_root(d: Path) -> None:
+    """Escrita só dentro da raiz: o que é alcançado por link simbólico para fora
+    dela (--follow-symlinks) fica somente leitura."""
+    try:
+        real = d.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise HTTPException(404, tr("Não encontrado", "Not found")) from None
+    if not is_within(real, ROOT):
+        raise HTTPException(403, tr("Fora da raiz: o que é acessado por link simbólico é somente leitura",
+                                    "Outside the library root: items reached through a symlink are read-only"))
+
+
+def read_head(path: Path, limit: int) -> bytes:
+    """Lê no máximo `limit` bytes (sem carregar o arquivo inteiro na memória)."""
+    with open(path, "rb") as f:
+        return f.read(limit)
 
 
 def file_api_url(rel: str) -> str:
@@ -326,8 +360,15 @@ def _find_banner(d: Path, raw: str | None, names: list[str]) -> tuple[str | None
             return raw, None, None
         p = Path(raw).expanduser()
         p = p if p.is_absolute() else d / p
-        if p.is_file() and ext_of(p.name) in IMAGE_EXT:
-            inside = p.parent.resolve() == d.resolve()
+        try:
+            real, d_real = p.resolve(strict=True), d.resolve()
+        except (OSError, RuntimeError):
+            real = d_real = None
+        # Só imagens da própria pasta ou da biblioteca: o course.conf de um curso baixado
+        # não pode expor arquivos de outros lugares do computador.
+        if (real is not None and real.is_file() and ext_of(real.name) in IMAGE_EXT
+                and (is_within(real, d_real) or is_within(real, ROOT))):
+            inside = p.parent.resolve() == d_real
             return None, p, (p.name if inside else None)
     for n in sorted(names, key=natural_key):
         if os.path.splitext(n)[0].lower() in BANNER_STEMS and ext_of(n) in IMAGE_EXT:
@@ -354,7 +395,7 @@ def load_conf(d: Path, rel: str) -> dict:
     raw: dict[str, str] = {}
     if conf_file:
         try:
-            raw = parse_conf_text(decode_bytes(conf_file.read_bytes()[:65536]))
+            raw = parse_conf_text(decode_bytes(read_head(conf_file, 65536)))
         except OSError:
             raw = {}
     try:
@@ -591,14 +632,22 @@ def search(query: str, scope: str = "") -> list[dict]:
 # --------------------------------------------------------------------------- #
 
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
-# Tipos que, servidos "inline", executariam scripts na origem do app: viram texto puro.
-_ACTIVE_TYPES = {".html", ".htm", ".xhtml", ".xml", ".js", ".mjs"}
+# Código-fonte web: exibido como texto puro, nunca interpretado.
+_ACTIVE_TYPES = {".html", ".htm", ".xhtml", ".xht", ".shtml", ".xml", ".js", ".mjs"}
+SVG_MIME = "image/svg+xml"
 
 
-def guess_mime(name: str) -> str:
+def guess_mime(name: str) -> tuple[str, bool]:
+    """(Content-Type, pode ser exibido inline). Lista de permissão: o mimetypes do sistema
+    mapeia dezenas de extensões para HTML/XML/SVG (.shtml, .xht, .svgz, .rss…), que
+    executariam scripts na origem do app; tudo o que não é mídia, imagem, PDF ou texto
+    é enviado como download binário."""
     if is_text_name(name) or ext_of(name) in _ACTIVE_TYPES:
-        return "text/plain; charset=utf-8"
-    return mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return "text/plain; charset=utf-8", True
+    mime = mimetypes.guess_type(name)[0] or ""
+    if mime.startswith(("video/", "audio/", "image/")) or mime in ("application/pdf", "text/vtt"):
+        return mime, True  # SVG passa daqui, mas sempre com CSP sandbox (send_file)
+    return "application/octet-stream", False
 
 
 def content_disposition(name: str, download: bool) -> str:
@@ -628,6 +677,9 @@ def send_file(path: Path, request: Request, download: bool = False, media_type: 
         raise HTTPException(404, tr("Arquivo não encontrado", "File not found"))
     size = st.st_size
     etag = f'"{st.st_mtime_ns:x}-{size:x}"'
+    guessed, inline_ok = guess_mime(path.name)
+    media_type = media_type or guessed
+    download = download or not inline_ok
     headers = {
         "Accept-Ranges": "bytes",
         "Content-Disposition": content_disposition(path.name, download),
@@ -636,9 +688,8 @@ def send_file(path: Path, request: Request, download: bool = False, media_type: 
         "Cache-Control": "no-cache",
         "X-Content-Type-Options": "nosniff",
     }
-    if ext_of(path.name) == ".svg":
+    if media_type.split(";")[0].strip().lower() == SVG_MIME:  # .svg, .svgz…
         headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
-    media_type = media_type or guess_mime(path.name)
 
     start, end, status = 0, size - 1, 200
     rng = request.headers.get("range")
@@ -668,6 +719,28 @@ def send_file(path: Path, request: Request, download: bool = False, media_type: 
 # App
 # --------------------------------------------------------------------------- #
 
+def host_allowed(name: str) -> bool:
+    """O ataque de DNS rebinding sempre chega com um nome de domínio no Host (é ele que
+    o atacante controla); um IP literal só aparece quando o usuário digitou o IP."""
+    if name in ALLOWED_HOSTS:
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return False
+
+
+def lan_host_names() -> set[str]:
+    """Nomes desta máquina, para acessar pela LAN (ex.: http://meupc.local:8000)."""
+    names = set(LOOPBACK)
+    for n in (socket.gethostname(), socket.getfqdn()):
+        n = n.strip().lower().rstrip(".")
+        if n:
+            names |= {n, n.split(".")[0], n.split(".")[0] + ".local"}
+    return names
+
+
 class HostGuard:
     """Bloqueia requisições com Host desconhecido (anti DNS-rebinding) e define o
     idioma das mensagens da requisição."""
@@ -692,7 +765,7 @@ class HostGuard:
         if ALLOWED_HOSTS is not None:
             host = headers.get(b"host", b"").decode("latin-1").lower()
             hostname = host if host.endswith("]") else host.rsplit(":", 1)[0]
-            if hostname.strip("[]") not in ALLOWED_HOSTS:
+            if not host_allowed(hostname.strip("[]")):
                 await PlainTextResponse(tr("Host não permitido", "Host not allowed"), status_code=400)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
@@ -864,12 +937,16 @@ def api_banner(request: Request, path: str = ""):
 # As rotas usam PUT/PATCH/DELETE: o navegador exige preflight CORS para elas, então
 # outro site não consegue chamá-las. O Origin é conferido como segunda barreira.
 
-def check_write(request: Request, json_body: bool = False) -> None:
-    if READ_ONLY:
-        raise HTTPException(403, tr("Hub em modo somente leitura (--read-only)", "CourseVault is in read-only mode (--read-only)"))
+def check_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     if origin and urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
         raise HTTPException(403, tr("Origem não permitida", "Origin not allowed"))
+
+
+def check_write(request: Request, json_body: bool = False) -> None:
+    if READ_ONLY:
+        raise HTTPException(403, tr("Hub em modo somente leitura (--read-only)", "CourseVault is in read-only mode (--read-only)"))
+    check_origin(request)
     if json_body and not request.headers.get("content-type", "").lower().startswith("application/json"):
         raise HTTPException(415, "Use Content-Type: application/json")
 
@@ -878,6 +955,7 @@ def writable_dir(path: str) -> tuple[Path, str]:
     d, rel = safe_path(path)
     if not rel or not d.is_dir():
         raise HTTPException(400, tr("Escolha a pasta de um curso", "Pick a course folder"))
+    require_inside_root(d)
     return d, rel
 
 
@@ -1002,6 +1080,7 @@ def item_path(path: str) -> tuple[Path, str]:
         raise HTTPException(400, tr("A raiz dos cursos não pode ser alterada", "The library root cannot be changed"))
     if HIDE_APP_FILES and "/" not in rel and rel in APP_FILES:
         raise HTTPException(403, tr("Arquivo do próprio Hub", "This is a CourseVault app file"))
+    require_inside_root(p.parent)  # o item pode ser um link; a pasta onde ele está, não
     return p, rel
 
 
@@ -1072,6 +1151,7 @@ def api_mkdir(request: Request, body: MkdirBody):
     parent, parent_rel = safe_path(body.parent)
     if not parent.is_dir():
         raise HTTPException(400, tr("Destino não é uma pasta", "Destination is not a folder"))
+    require_inside_root(parent)
     name = valid_name(body.name)
     try:
         (parent / name).mkdir()
@@ -1112,6 +1192,7 @@ def api_move(request: Request, body: MoveBody):
     dest, dest_rel = safe_path(body.dest)
     if not dest.is_dir():
         raise HTTPException(400, tr("Destino não é uma pasta", "Destination is not a folder"))
+    require_inside_root(dest)
     if not body.paths or len(body.paths) > 2000:
         raise HTTPException(400, tr("Nenhum item para mover", "Nothing to move"))
     items = [item_path(p) for p in body.paths]  # valida tudo antes de mexer em qualquer coisa
@@ -1188,7 +1269,7 @@ def api_subtitle(path: str):
     f, _ = safe_path(path)
     if not f.is_file() or ext_of(f.name) not in SUB_EXT:
         raise HTTPException(404, tr("Legenda não encontrada", "Subtitle not found"))
-    text = decode_bytes(f.read_bytes()[: 5 * 1024 * 1024]).replace("\r\n", "\n").replace("\r", "\n")
+    text = decode_bytes(read_head(f, 5 * 1024 * 1024)).replace("\r\n", "\n").replace("\r", "\n")
     if ext_of(f.name) == ".srt":
         text = re.sub(r"(\d+):(\d{2}):(\d{2}),(\d{3})",
                       lambda m: f"{int(m.group(1)):02d}:{m.group(2)}:{m.group(3)}.{m.group(4)}", text)
@@ -1199,7 +1280,8 @@ def api_subtitle(path: str):
 
 
 @app.post("/api/refresh")
-def api_refresh():
+def api_refresh(request: Request):
+    check_origin(request)  # reindexar a árvore toda é caro: outro site não pode disparar
     _conf_cache.clear()
     entries, stats = INDEX.snapshot(force=True)
     return {"ok": True, "entries": len(entries), "folders": len(stats)}
@@ -1230,6 +1312,9 @@ def main() -> None:
                     help=tr("permitir links simbólicos que apontam para fora da raiz (ex.: HD externo)", "allow symlinks that point outside the root (e.g. external drive)"))
     ap.add_argument("--ttl", type=float, default=30.0,
                     help=tr("segundos de cache do índice de busca/contagens (padrão: 30)", "seconds to cache the search index/counts (default: 30)"))
+    ap.add_argument("--allow-host", action="append", default=[], metavar=tr("NOME", "NAME"),
+                    help=tr("nome extra aceito no header Host em modo LAN (repetível; '*' aceita qualquer um)",
+                            "extra name accepted in the Host header in LAN mode (repeatable; '*' accepts any)"))
     ap.add_argument("--read-only", action="store_true",
                     help=tr("desativa a edição (capa, criar, renomear, mover e excluir)", "disable editing (cover, create, rename, move and delete)"))
     args = ap.parse_args()
@@ -1244,8 +1329,16 @@ def main() -> None:
     if args.host in LOOPBACK:
         ALLOWED_HOSTS = set(LOOPBACK)
     else:
-        ALLOWED_HOSTS = None
         print(tr("⚠  Servidor exposto na rede: qualquer dispositivo da LAN poderá ler os arquivos da raiz.", "⚠  Server exposed to the network: any device on the LAN can read the files under the root."))
+        extra = {h.strip().lower().strip("[]") for h in args.allow_host if h.strip()}
+        if "*" in extra:
+            ALLOWED_HOSTS = None
+            print(tr("⚠  --allow-host '*': sem proteção contra DNS rebinding (qualquer site aberto na LAN pode acessar o hub).",
+                     "⚠  --allow-host '*': no DNS-rebinding protection (any website opened on the LAN can reach CourseVault)."))
+        else:
+            ALLOWED_HOSTS = lan_host_names() | extra
+            print(tr(f"   Acesse pelo IP ou por: {', '.join(sorted(ALLOWED_HOSTS - LOOPBACK))} (outros nomes: --allow-host)",
+                     f"   Use the IP address or: {', '.join(sorted(ALLOWED_HOSTS - LOOPBACK))} (other names: --allow-host)"))
 
     threading.Thread(target=INDEX.snapshot, daemon=True).start()  # pré-aquece o índice
     shown_host = "localhost" if args.host in LOOPBACK or args.host == "0.0.0.0" else args.host

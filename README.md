@@ -40,7 +40,8 @@ The browser opens at `http://localhost:8000`.
 | `-p, --port 8000` | HTTP port |
 | `--host 0.0.0.0` | Expose on the LAN (e.g. watch on a tablet). The default `127.0.0.1` only accepts local access |
 | `--no-browser` | Do not open the browser automatically |
-| `--follow-symlinks` | Allow symlinks that point outside the root (e.g. courses on an external drive) |
+| `--follow-symlinks` | Allow symlinks that point outside the root (e.g. courses on an external drive). Those items are read-only |
+| `--allow-host NAME` | With `--host 0.0.0.0`: extra name accepted in the `Host` header (repeatable). IP addresses and the machine's own name always work |
 | `--ttl 30` | Seconds to cache the search index and recursive counts |
 | `--read-only` | Disable all editing (cover, create, rename, move and delete) |
 
@@ -74,7 +75,7 @@ See `course.conf.example`:
 
 ```ini
 pinned = true
-banner = banner.jpg            # local path, absolute path or external URL
+banner = banner.jpg            # image inside the folder or library, or external URL
 tags = Active Directory, Pentest, Windows, Kerberos
 title = Active Directory Exploitation
 description = Notes and lessons on attacking AD environments.
@@ -100,11 +101,13 @@ A `course.conf` in the root sets the library title (`title = My Courses`).
 
 ## Security
 
-- Listens only on `127.0.0.1` by default and rejects unknown `Host` headers (DNS-rebinding protection).
-- Blocks `../`, absolute paths, hidden files (`.something`) and symlinks pointing outside the root (unless you use `--follow-symlinks`).
-- Write routes (`PUT`/`PATCH`/`DELETE` and the JSON-only `POST /api/fs/*`) reject requests whose `Origin` is another site. With `--host 0.0.0.0`, any device on the LAN can edit too; use `--read-only` to prevent that.
+- Listens only on `127.0.0.1` by default and rejects unknown `Host` headers (DNS-rebinding protection). In LAN mode (`--host 0.0.0.0`) the check stays on: IP addresses and the machine's own name (`hostname`, `hostname.local`) are accepted; add other names with `--allow-host`.
+- Blocks `../`, absolute paths, hidden files (`.something`) and symlinks pointing outside the root (unless you use `--follow-symlinks`). Even with `--follow-symlinks`, links to hidden files or folders (e.g. `~/.ssh`) are refused, and whatever lives outside the root is read-only.
+- A `banner` in `course.conf` only accepts images inside the folder itself or inside the library.
+- Write routes (`PUT`/`PATCH`/`DELETE`, the JSON-only `POST /api/fs/*` and `POST /api/refresh`) reject requests whose `Origin` is another site. With `--host 0.0.0.0`, any device on the LAN can edit too; use `--read-only` to prevent that.
 - Names containing `/ \ < > : " | ? *`, starting with a dot or ending with a dot are refused (NTFS-compatible). The root, `.lixeira` and the app files cannot be changed.
-- `.html`/`.js`/`.xml` are served as plain text and `.svg` with a `sandbox` CSP, so no material can run scripts on the app's origin.
+- Only video, audio, images, PDF, subtitles and text are shown in the browser. Web code (`.html`, `.xhtml`, `.shtml`, `.js`, `.xml`) is served as plain text, SVG with a `sandbox` CSP, and every other type (e.g. `.xht`, `.svgz`, `.rss`) as a download, so no material can run scripts on the app's origin.
+- The highlight.js, marked and DOMPurify scripts from the CDN are checked with SRI (`integrity`). Tailwind is pinned to an exact version, but its CDN does not support SRI.
 
 ## Notes
 

@@ -7,7 +7,7 @@ title = Active Directory Exploitation      # overrides the folder name (optional
 description = Notes and lessons on attacking AD environments.
 tags = Active Directory, Pentest, Windows, Kerberos
 
-# Cover: file relative to the folder, absolute path or external URL.
+# Cover: image inside this folder or the library (relative or absolute path), or external URL.
 # Without "banner", the app uses banner.*/cover.*/capa.* from the folder, or a gradient.
 banner = banner.jpg
 # banner = https://example.com/cover.png

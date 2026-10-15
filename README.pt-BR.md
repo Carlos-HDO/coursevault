@@ -39,7 +39,8 @@ O navegador abre em `http://localhost:8000`.
 | `-p, --port 8000` | Porta HTTP |
 | `--host 0.0.0.0` | Expõe na LAN (ex.: assistir no tablet). O padrão `127.0.0.1` só aceita acesso local |
 | `--no-browser` | Não abre o navegador automaticamente |
-| `--follow-symlinks` | Permite links simbólicos que apontam para fora da raiz (ex.: cursos em um HD externo) |
+| `--follow-symlinks` | Permite links simbólicos que apontam para fora da raiz (ex.: cursos em um HD externo). Esses itens ficam somente leitura |
+| `--allow-host NOME` | Com `--host 0.0.0.0`: nome extra aceito no header `Host` (repetível). IPs e o nome da própria máquina sempre funcionam |
 | `--ttl 30` | Segundos de cache do índice de busca e das contagens recursivas |
 | `--read-only` | Desativa toda a edição (capa, criar, renomear, mover e excluir) |
 
@@ -73,7 +74,7 @@ Veja `course.conf.example`:
 
 ```ini
 pinned = true
-banner = banner.jpg            # caminho local, absoluto ou URL externa
+banner = banner.jpg            # imagem dentro da pasta ou da biblioteca, ou URL externa
 tags = Active Directory, Pentest, Windows, Kerberos
 title = Active Directory Exploitation
 description = Anotações e aulas sobre exploração em ambientes AD.
@@ -99,11 +100,13 @@ Um `course.conf` na raiz define o título do hub (`title = Meus Cursos`).
 
 ## Segurança
 
-- Escuta só em `127.0.0.1` por padrão e rejeita `Host` desconhecido (proteção contra DNS rebinding).
-- Bloqueia `../`, caminhos absolutos, arquivos ocultos (`.algo`) e symlinks para fora da raiz (a menos que você use `--follow-symlinks`).
-- As rotas que gravam (`PUT`/`PATCH`/`DELETE` e os `POST` de `/api/fs/*`, que exigem JSON) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode editar; use `--read-only` para impedir.
+- Escuta só em `127.0.0.1` por padrão e rejeita `Host` desconhecido (proteção contra DNS rebinding). No modo LAN (`--host 0.0.0.0`) a checagem continua: aceita IPs e o nome da própria máquina (`hostname`, `hostname.local`); outros nomes, com `--allow-host`.
+- Bloqueia `../`, caminhos absolutos, arquivos ocultos (`.algo`) e symlinks para fora da raiz (a menos que você use `--follow-symlinks`). Mesmo com `--follow-symlinks`, links para arquivos ou pastas ocultas (ex.: `~/.ssh`) são recusados, e o que fica fora da raiz é somente leitura.
+- O `banner` do `course.conf` só aceita imagens dentro da própria pasta ou da biblioteca.
+- As rotas que gravam (`PUT`/`PATCH`/`DELETE`, os `POST` de `/api/fs/*`, que exigem JSON, e o `POST /api/refresh`) rejeitam requisições com `Origin` de outro site. Com `--host 0.0.0.0`, qualquer dispositivo da LAN também pode editar; use `--read-only` para impedir.
 - Nomes com `/ \ < > : " | ? *`, começando com ponto ou terminando em ponto são recusados (compatível com NTFS). A raiz, a `.lixeira` e os arquivos do app não podem ser alterados.
-- `.html`/`.js`/`.xml` são servidos como texto puro e `.svg` com CSP `sandbox`, para que nenhum material execute script na origem do app.
+- Só vídeo, áudio, imagens, PDF, legendas e texto são exibidos no navegador. Código web (`.html`, `.xhtml`, `.shtml`, `.js`, `.xml`) é servido como texto puro, SVG com CSP `sandbox` e qualquer outro tipo (ex.: `.xht`, `.svgz`, `.rss`) como download, para que nenhum material execute script na origem do app.
+- Os scripts de highlight.js, marked e DOMPurify vindos do CDN são conferidos com SRI (`integrity`). O Tailwind está fixado numa versão exata, mas o CDN dele não suporta SRI.
 
 ## Observações
 

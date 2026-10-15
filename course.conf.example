@@ -1,21 +1,21 @@
-# course.conf — coloque na pasta do curso (ou em qualquer subpasta).
-# Formato chave = valor (também aceita "chave: valor" estilo YAML).
-# Comentários começam com # ; para usar # dentro de um valor, coloque o valor entre aspas.
+# course.conf — put it in a course folder (or in any subfolder).
+# Format: key = value (YAML-style "key: value" also works).
+# Comments start with # ; to use # inside a value, wrap the value in quotes.
 
-pinned = true                    # true/1/sim: fica fixado no topo
-title = Active Directory Exploitation      # sobrescreve o nome da pasta (opcional)
-description = Anotações e aulas sobre exploração em ambientes AD.
+pinned = true                    # true/1/yes/sim: pinned at the top
+title = Active Directory Exploitation      # overrides the folder name (optional)
+description = Notes and lessons on attacking AD environments.
 tags = Active Directory, Pentest, Windows, Kerberos
 
-# Capa: arquivo relativo à pasta, caminho absoluto ou URL externa.
-# Sem "banner", o app usa banner.*/cover.*/capa.* da pasta, ou um gradiente.
+# Cover: file relative to the folder, absolute path or external URL.
+# Without "banner", the app uses banner.*/cover.*/capa.* from the folder, or a gradient.
 banner = banner.jpg
-# banner = https://exemplo.com/capa.png
-# banner = none                  # sem capa (desliga a detecção automática)
-# banner_pos = 30               # enquadramento vertical da capa: 0 = topo, 50 = centro, 100 = base
+# banner = https://example.com/cover.png
+# banner = none                  # no cover (disables automatic detection)
+# banner_pos = 30               # vertical framing of the cover: 0 = top, 50 = center, 100 = bottom
 
-# Opcionais
-# status = Em andamento          # rótulo fixo no card (senão é calculado pelo progresso)
-# color = #1e3a8a                # cor base do gradiente quando não há banner
-# order = 1                      # ordem manual (menor primeiro, depois dos fixados)
-# hidden = true                  # esconde a pasta do hub
+# Optional
+# status = In progress           # fixed label on the card (otherwise computed from progress)
+# color = #1e3a8a                # base gradient color when there is no banner
+# order = 1                      # manual order (lowest first, after pinned folders)
+# hidden = true                  # hides the folder from the library

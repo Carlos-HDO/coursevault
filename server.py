@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hub de Cursos — portal local para navegar pelas pastas de cursos e laboratórios.
+CourseVault — portal local para navegar pelas pastas de cursos e laboratórios.
 
     pip install -r requirements.txt
     python server.py                       # serve a pasta atual
@@ -24,6 +24,7 @@ import threading
 import time
 import unicodedata
 import webbrowser
+from contextvars import ContextVar
 from datetime import datetime
 from email.utils import formatdate
 from pathlib import Path
@@ -41,12 +42,21 @@ from starlette.concurrency import run_in_threadpool
 
 APP_DIR = Path(__file__).resolve().parent
 INDEX_HTML = APP_DIR / "index.html"
-APP_FILES = {"server.py", "index.html", "requirements.txt", "course.conf.example"}
+APP_FILES = {"server.py", "index.html", "requirements.txt", "course.conf.example", "cursos.sh",
+             "README.md", "README.pt-BR.md"}
 
 ROOT: Path = Path(os.environ.get("HUB_ROOT", os.getcwd())).expanduser().resolve()
 FOLLOW_SYMLINKS = os.environ.get("HUB_FOLLOW_SYMLINKS") == "1"
 READ_ONLY = os.environ.get("HUB_READ_ONLY") == "1"
 TRASH_DIR = ".lixeira"  # oculto no hub (começa com ponto)
+
+# Idioma das mensagens: por requisição (header X-Lang do front, ou Accept-Language);
+# no terminal, o LANG do sistema.
+_LANG: ContextVar[str] = ContextVar("lang", default="pt" if os.environ.get("LANG", "").lower().startswith("pt") else "en")
+
+
+def tr(pt: str, en: str) -> str:
+    return pt if _LANG.get() == "pt" else en
 HIDE_APP_FILES = APP_DIR == ROOT
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 # None = aceita qualquer Host (modo LAN). Protege contra DNS rebinding em modo local.
@@ -195,18 +205,18 @@ def safe_path(rel: str | None) -> tuple[Path, str]:
     links simbólicos que apontem para fora da raiz."""
     rel = (rel or "").replace("\\", "/")
     if "\x00" in rel:
-        raise HTTPException(400, "Caminho inválido")
+        raise HTTPException(400, tr("Caminho inválido", "Invalid path"))
     parts = [p for p in rel.split("/") if p not in ("", ".")]
     for p in parts:
         if p == ".." or is_hidden(p) or (os.name == "nt" and ":" in p):
-            raise HTTPException(403, "Acesso negado")
+            raise HTTPException(403, tr("Acesso negado", "Access denied"))
     target = ROOT.joinpath(*parts)
     try:
         real = target.resolve(strict=True)
     except (OSError, RuntimeError):
-        raise HTTPException(404, "Não encontrado") from None
+        raise HTTPException(404, tr("Não encontrado", "Not found")) from None
     if not FOLLOW_SYMLINKS and not is_within(real, ROOT):
-        raise HTTPException(403, "Acesso negado")
+        raise HTTPException(403, tr("Acesso negado", "Access denied"))
     return target, "/".join(parts)
 
 
@@ -405,7 +415,7 @@ def update_conf(d: Path, updates: dict[str, str | None]) -> None:
     try:
         lines = decode_bytes(conf_file.read_bytes()).splitlines() if conf_file.is_file() else []
     except OSError as exc:
-        raise HTTPException(500, f"Não foi possível ler o {conf_file.name}: {exc.strerror}") from None
+        raise HTTPException(500, tr(f"Não foi possível ler o {conf_file.name}: {exc.strerror}", f"Could not read {conf_file.name}: {exc.strerror}")) from None
     pending = dict(updates)
     out: list[str] = []
     for line in lines:
@@ -437,7 +447,7 @@ def atomic_write(d: Path, name: str, data: bytes) -> None:
             tmp.unlink()
         except OSError:
             pass
-        raise HTTPException(500, f"Não foi possível gravar {name}: {exc.strerror}") from None
+        raise HTTPException(500, tr(f"Não foi possível gravar {name}: {exc.strerror}", f"Could not write {name}: {exc.strerror}")) from None
 
 
 def backup_file(d: Path, name: str) -> None:
@@ -447,7 +457,7 @@ def backup_file(d: Path, name: str) -> None:
     except FileNotFoundError:
         pass
     except OSError as exc:
-        raise HTTPException(500, f"Não foi possível mover {name}: {exc.strerror}") from None
+        raise HTTPException(500, tr(f"Não foi possível mover {name}: {exc.strerror}", f"Could not move {name}: {exc.strerror}")) from None
 
 
 def sniff_image(head: bytes) -> str | None:
@@ -613,9 +623,9 @@ def send_file(path: Path, request: Request, download: bool = False, media_type: 
     try:
         st = path.stat()
     except OSError:
-        raise HTTPException(404, "Arquivo não encontrado") from None
+        raise HTTPException(404, tr("Arquivo não encontrado", "File not found")) from None
     if not path.is_file():
-        raise HTTPException(404, "Arquivo não encontrado")
+        raise HTTPException(404, tr("Arquivo não encontrado", "File not found"))
     size = st.st_size
     etag = f'"{st.st_mtime_ns:x}-{size:x}"'
     headers = {
@@ -659,27 +669,41 @@ def send_file(path: Path, request: Request, download: bool = False, media_type: 
 # --------------------------------------------------------------------------- #
 
 class HostGuard:
-    """Bloqueia requisições com Host desconhecido (anti DNS-rebinding)."""
+    """Bloqueia requisições com Host desconhecido (anti DNS-rebinding) e define o
+    idioma das mensagens da requisição."""
 
     def __init__(self, app) -> None:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and ALLOWED_HOSTS is not None:
-            host = dict(scope["headers"]).get(b"host", b"").decode("latin-1").lower()
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope["headers"])
+        lang = (headers.get(b"x-lang") or headers.get(b"accept-language") or b"").decode("latin-1").strip().lower()
+        token = _LANG.set("pt" if lang.startswith("pt") else "en") if lang else None
+        try:
+            await self._guarded(scope, receive, send, headers)
+        finally:
+            if token is not None:
+                _LANG.reset(token)
+
+    async def _guarded(self, scope, receive, send, headers):
+        if ALLOWED_HOSTS is not None:
+            host = headers.get(b"host", b"").decode("latin-1").lower()
             hostname = host if host.endswith("]") else host.rsplit(":", 1)[0]
             if hostname.strip("[]") not in ALLOWED_HOSTS:
-                await PlainTextResponse("Host não permitido", status_code=400)(scope, receive, send)
+                await PlainTextResponse(tr("Host não permitido", "Host not allowed"), status_code=400)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
 
-app = FastAPI(title="Hub de Cursos", docs_url="/api/docs", redoc_url=None)
+app = FastAPI(title="CourseVault", docs_url="/api/docs", redoc_url=None)
 app.add_middleware(HostGuard)
 
 
 def hub_title() -> str:
-    return load_conf(ROOT, "")["title"] or "Hub de Cursos"
+    return load_conf(ROOT, "")["title"] or "CourseVault"
 
 
 def dir_item(d: Path, rel: str, stats: dict) -> dict | None:
@@ -698,14 +722,14 @@ def dir_item(d: Path, rel: str, stats: dict) -> dict | None:
 def api_list(path: str = ""):
     d, rel = safe_path(path)
     if not d.is_dir():
-        raise HTTPException(404, "Pasta não encontrada")
+        raise HTTPException(404, tr("Pasta não encontrada", "Folder not found"))
     conf = load_conf(d, rel)
     _, stats = INDEX.snapshot()
     try:
         with os.scandir(d) as it:
             items = sorted(it, key=lambda e: natural_key(e.name))
     except OSError as exc:
-        raise HTTPException(500, f"Não foi possível ler a pasta: {exc.strerror}") from None
+        raise HTTPException(500, tr(f"Não foi possível ler a pasta: {exc.strerror}", f"Could not read the folder: {exc.strerror}")) from None
 
     dirs, media, docs, images, others, subs = [], [], [], [], [], []
     skip = set(CONF_NAMES) | {conf["_banner_name"]}
@@ -786,7 +810,7 @@ def api_tree(path: str = ""):
     """Subpastas de uma pasta (navegador de pastas do "Mover para…")."""
     d, rel = safe_path(path)
     if not d.is_dir():
-        raise HTTPException(404, "Pasta não encontrada")
+        raise HTTPException(404, tr("Pasta não encontrada", "Folder not found"))
     dirs = []
     try:
         with os.scandir(d) as it:
@@ -800,7 +824,7 @@ def api_tree(path: str = ""):
                 dirs.append({"name": e.name, "path": child, "title": conf["title"] or e.name,
                              "has_dirs": _has_subdirs(Path(e.path), child)})
     except OSError as exc:
-        raise HTTPException(500, f"Não foi possível ler a pasta: {exc.strerror}") from None
+        raise HTTPException(500, tr(f"Não foi possível ler a pasta: {exc.strerror}", f"Could not read the folder: {exc.strerror}")) from None
     dirs.sort(key=lambda x: natural_key(x["name"]))
     crumbs = breadcrumbs(rel)
     return {"path": rel, "title": crumbs[-1]["title"], "breadcrumbs": crumbs, "dirs": dirs}
@@ -832,7 +856,7 @@ def api_banner(request: Request, path: str = ""):
     d, rel = safe_path(path)
     banner = load_conf(d, rel)["_banner_file"]
     if banner is None or ext_of(banner.name) not in IMAGE_EXT:
-        raise HTTPException(404, "Sem banner")
+        raise HTTPException(404, tr("Sem banner", "No cover"))
     return send_file(banner, request)
 
 
@@ -842,10 +866,10 @@ def api_banner(request: Request, path: str = ""):
 
 def check_write(request: Request, json_body: bool = False) -> None:
     if READ_ONLY:
-        raise HTTPException(403, "Hub em modo somente leitura (--read-only)")
+        raise HTTPException(403, tr("Hub em modo somente leitura (--read-only)", "CourseVault is in read-only mode (--read-only)"))
     origin = request.headers.get("origin")
     if origin and urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
-        raise HTTPException(403, "Origem não permitida")
+        raise HTTPException(403, tr("Origem não permitida", "Origin not allowed"))
     if json_body and not request.headers.get("content-type", "").lower().startswith("application/json"):
         raise HTTPException(415, "Use Content-Type: application/json")
 
@@ -853,7 +877,7 @@ def check_write(request: Request, json_body: bool = False) -> None:
 def writable_dir(path: str) -> tuple[Path, str]:
     d, rel = safe_path(path)
     if not rel or not d.is_dir():
-        raise HTTPException(400, "Escolha a pasta de um curso")
+        raise HTTPException(400, tr("Escolha a pasta de um curso", "Pick a course folder"))
     return d, rel
 
 
@@ -886,15 +910,15 @@ async def api_banner_put(request: Request, path: str):
     except ValueError:
         declared = 0
     if declared > MAX_BANNER_BYTES:
-        raise HTTPException(413, "Imagem maior que 15 MB")
+        raise HTTPException(413, tr("Imagem maior que 15 MB", "Image larger than 15 MB"))
     buf = bytearray()
     async for chunk in request.stream():
         buf += chunk
         if len(buf) > MAX_BANNER_BYTES:
-            raise HTTPException(413, "Imagem maior que 15 MB")
+            raise HTTPException(413, tr("Imagem maior que 15 MB", "Image larger than 15 MB"))
     ext = sniff_image(bytes(buf[:16]))
     if not ext:
-        raise HTTPException(415, "Formato não suportado (use JPG, PNG, WebP, GIF ou AVIF)")
+        raise HTTPException(415, tr("Formato não suportado (use JPG, PNG, WebP, GIF ou AVIF)", "Unsupported format (use JPG, PNG, WebP, GIF or AVIF)"))
     return await run_in_threadpool(_save_banner, d, rel, bytes(buf), ext)
 
 
@@ -905,14 +929,14 @@ async def api_conf_patch(request: Request, path: str):
     try:
         body = await request.json()
     except ValueError:
-        raise HTTPException(400, "JSON inválido") from None
+        raise HTTPException(400, tr("JSON inválido", "Invalid JSON")) from None
     if not isinstance(body, dict) or not body or set(body) - {"banner", "banner_pos"}:
-        raise HTTPException(400, "Campos permitidos: banner, banner_pos")
+        raise HTTPException(400, tr("Campos permitidos: banner, banner_pos", "Allowed fields: banner, banner_pos"))
     updates: dict[str, str | None] = {}
     if "banner" in body:
         url = body["banner"]
         if not isinstance(url, str) or len(url) > 2000 or not re.fullmatch(r"https?://[^\s\"'<>]+", url, re.I):
-            raise HTTPException(400, "URL inválida (use http:// ou https://)")
+            raise HTTPException(400, tr("URL inválida (use http:// ou https://)", "Invalid URL (use http:// or https://)"))
         updates["banner"] = url
     if "banner_pos" in body:
         pos = body["banner_pos"]
@@ -921,7 +945,7 @@ async def api_conf_patch(request: Request, path: str):
         elif isinstance(pos, (int, float)) and not isinstance(pos, bool) and 0 <= pos <= 100:
             updates["banner_pos"] = f"{round(pos, 1):g}"
         else:
-            raise HTTPException(400, "banner_pos deve ser um número de 0 a 100")
+            raise HTTPException(400, tr("banner_pos deve ser um número de 0 a 100", "banner_pos must be a number from 0 to 100"))
     return await run_in_threadpool(_set_conf, d, rel, updates)
 
 
@@ -959,15 +983,15 @@ class TrashBody(BaseModel):
 def valid_name(name: str) -> str:
     name = unicodedata.normalize("NFC", name.strip())
     if not name or name in (".", "..") or name.startswith("."):
-        raise HTTPException(400, "Nome inválido: não pode ficar vazio nem começar com ponto")
+        raise HTTPException(400, tr("Nome inválido: não pode ficar vazio nem começar com ponto", "Invalid name: it cannot be empty or start with a dot"))
     if _BAD_NAME.search(name):
-        raise HTTPException(400, 'O nome não pode conter / \\ < > : " | ? *')
+        raise HTTPException(400, tr('O nome não pode conter / \\ < > : " | ? *', 'Names cannot contain / \\ < > : " | ? *'))
     if name.endswith("."):
-        raise HTTPException(400, "O nome não pode terminar com ponto")
+        raise HTTPException(400, tr("O nome não pode terminar com ponto", "Names cannot end with a dot"))
     if len(name.encode("utf-8")) > 255:
-        raise HTTPException(400, "Nome longo demais")
+        raise HTTPException(400, tr("Nome longo demais", "Name too long"))
     if name in CONF_NAMES or name in IGNORED_NAMES:
-        raise HTTPException(400, "Nome reservado")
+        raise HTTPException(400, tr("Nome reservado", "Reserved name"))
     return name
 
 
@@ -975,9 +999,9 @@ def item_path(path: str) -> tuple[Path, str]:
     """Item que pode ser renomeado/movido/excluído (nunca a raiz nem os arquivos do app)."""
     p, rel = safe_path(path)
     if not rel:
-        raise HTTPException(400, "A raiz dos cursos não pode ser alterada")
+        raise HTTPException(400, tr("A raiz dos cursos não pode ser alterada", "The library root cannot be changed"))
     if HIDE_APP_FILES and "/" not in rel and rel in APP_FILES:
-        raise HTTPException(403, "Arquivo do próprio Hub")
+        raise HTTPException(403, tr("Arquivo do próprio Hub", "This is a CourseVault app file"))
     return p, rel
 
 
@@ -1017,18 +1041,18 @@ def _same_entry(a: Path, b: Path) -> bool:
 def move_entry(src: Path, dst: Path, allow_copy: bool) -> None:
     """Renomeia/move sem nunca sobrescrever. Entre discos diferentes só copia se permitido."""
     if os.path.lexists(dst) and not _same_entry(src, dst):
-        raise HTTPException(409, f"Já existe “{dst.name}” no destino")
+        raise HTTPException(409, tr(f"Já existe “{dst.name}” no destino", f"“{dst.name}” already exists in the destination"))
     try:
         os.rename(src, dst)
     except OSError as exc:
         if exc.errno != errno.EXDEV:
-            raise HTTPException(500, f"Não foi possível mover “{src.name}”: {exc.strerror}") from None
+            raise HTTPException(500, tr(f"Não foi possível mover “{src.name}”: {exc.strerror}", f"Could not move “{src.name}”: {exc.strerror}")) from None
         if not allow_copy:
-            raise HTTPException(409, f"“{src.name}” está em outro disco; mova pelo gerenciador de arquivos") from None
+            raise HTTPException(409, tr(f"“{src.name}” está em outro disco; mova pelo gerenciador de arquivos", f"“{src.name}” is on another disk; move it with your file manager")) from None
         try:
             shutil.move(str(src), str(dst))
         except OSError as exc2:
-            raise HTTPException(500, f"Não foi possível mover “{src.name}”: {exc2.strerror}") from None
+            raise HTTPException(500, tr(f"Não foi possível mover “{src.name}”: {exc2.strerror}", f"Could not move “{src.name}”: {exc2.strerror}")) from None
 
 
 def fs_changed() -> None:
@@ -1047,14 +1071,14 @@ def api_mkdir(request: Request, body: MkdirBody):
     check_write(request, json_body=True)
     parent, parent_rel = safe_path(body.parent)
     if not parent.is_dir():
-        raise HTTPException(400, "Destino não é uma pasta")
+        raise HTTPException(400, tr("Destino não é uma pasta", "Destination is not a folder"))
     name = valid_name(body.name)
     try:
         (parent / name).mkdir()
     except FileExistsError:
-        raise HTTPException(409, f"Já existe “{name}” aqui") from None
+        raise HTTPException(409, tr(f"Já existe “{name}” aqui", f"“{name}” already exists here")) from None
     except OSError as exc:
-        raise HTTPException(500, f"Não foi possível criar a pasta: {exc.strerror}") from None
+        raise HTTPException(500, tr(f"Não foi possível criar a pasta: {exc.strerror}", f"Could not create the folder: {exc.strerror}")) from None
     fs_changed()
     return {"path": join_rel(parent_rel, name)}
 
@@ -1087,13 +1111,13 @@ def api_move(request: Request, body: MoveBody):
     check_write(request, json_body=True)
     dest, dest_rel = safe_path(body.dest)
     if not dest.is_dir():
-        raise HTTPException(400, "Destino não é uma pasta")
+        raise HTTPException(400, tr("Destino não é uma pasta", "Destination is not a folder"))
     if not body.paths or len(body.paths) > 2000:
-        raise HTTPException(400, "Nenhum item para mover")
+        raise HTTPException(400, tr("Nenhum item para mover", "Nothing to move"))
     items = [item_path(p) for p in body.paths]  # valida tudo antes de mexer em qualquer coisa
     for _, rel in items:
         if dest_rel == rel or dest_rel.startswith(rel + "/"):
-            raise HTTPException(400, f"Não dá para mover “{rel.rsplit('/', 1)[-1]}” para dentro dele mesmo")
+            raise HTTPException(400, tr(f"Não dá para mover “{rel.rsplit('/', 1)[-1]}” para dentro dele mesmo", f"Cannot move “{rel.rsplit('/', 1)[-1]}” into itself"))
     moved: list[dict] = []
     try:
         for src, rel in items:
@@ -1117,7 +1141,7 @@ def api_move(request: Request, body: MoveBody):
 def api_trash(request: Request, body: TrashBody):
     check_write(request, json_body=True)
     if not body.paths or len(body.paths) > 2000:
-        raise HTTPException(400, "Nenhum item para excluir")
+        raise HTTPException(400, tr("Nenhum item para excluir", "Nothing to delete"))
     items = [item_path(p) for p in body.paths]
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     base = ROOT / TRASH_DIR / stamp
@@ -1134,7 +1158,7 @@ def api_trash(request: Request, body: TrashBody):
                 try:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:
-                    raise HTTPException(500, f"Não foi possível criar a lixeira: {exc.strerror}") from None
+                    raise HTTPException(500, tr(f"Não foi possível criar a lixeira: {exc.strerror}", f"Could not create the trash folder: {exc.strerror}")) from None
                 move_entry(p, dst, allow_copy=False)
                 trashed.append(r)
     except HTTPException as exc:
@@ -1149,12 +1173,12 @@ def api_trash(request: Request, body: TrashBody):
 def api_text(path: str):
     f, rel = safe_path(path)
     if not f.is_file():
-        raise HTTPException(404, "Arquivo não encontrado")
+        raise HTTPException(404, tr("Arquivo não encontrado", "File not found"))
     size = f.stat().st_size
     with open(f, "rb") as fh:
         raw = fh.read(MAX_TEXT_BYTES)
     if b"\x00" in raw[:8192] and not raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        raise HTTPException(415, "Arquivo binário — use o download")
+        raise HTTPException(415, tr("Arquivo binário — use o download", "Binary file — use download"))
     return {"name": f.name, "path": rel, "ext": ext_of(f.name), "size": size,
             "truncated": size > MAX_TEXT_BYTES, "content": decode_bytes(raw)}
 
@@ -1163,7 +1187,7 @@ def api_text(path: str):
 def api_subtitle(path: str):
     f, _ = safe_path(path)
     if not f.is_file() or ext_of(f.name) not in SUB_EXT:
-        raise HTTPException(404, "Legenda não encontrada")
+        raise HTTPException(404, tr("Legenda não encontrada", "Subtitle not found"))
     text = decode_bytes(f.read_bytes()[: 5 * 1024 * 1024]).replace("\r\n", "\n").replace("\r", "\n")
     if ext_of(f.name) == ".srt":
         text = re.sub(r"(\d+):(\d{2}):(\d{2}),(\d{3})",
@@ -1184,7 +1208,7 @@ def api_refresh():
 @app.get("/", include_in_schema=False)
 def index():
     if not INDEX_HTML.is_file():
-        return PlainTextResponse(f"index.html não encontrado em {APP_DIR}", status_code=500)
+        return PlainTextResponse(tr(f"index.html não encontrado em {APP_DIR}", f"index.html not found in {APP_DIR}"), status_code=500)
     return FileResponse(INDEX_HTML, media_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
@@ -1194,24 +1218,25 @@ def index():
 
 def main() -> None:
     global FOLLOW_SYMLINKS, ALLOWED_HOSTS, READ_ONLY
-    ap = argparse.ArgumentParser(description="Hub de Cursos — portal local para suas pastas de cursos.")
+    ap = argparse.ArgumentParser(description=tr("CourseVault — portal local para suas pastas de cursos.",
+                                             "CourseVault — a local portal for your course folders."))
     ap.add_argument("-r", "--root", default=os.environ.get("HUB_ROOT", "."),
-                    help="pasta raiz dos cursos (padrão: pasta atual)")
+                    help=tr("pasta raiz dos cursos (padrão: pasta atual)", "courses root folder (default: current folder)"))
     ap.add_argument("--host", default="127.0.0.1",
-                    help="interface de rede (use 0.0.0.0 para acessar de outros dispositivos da LAN)")
-    ap.add_argument("-p", "--port", type=int, default=8000, help="porta (padrão: 8000)")
-    ap.add_argument("--no-browser", action="store_true", help="não abrir o navegador automaticamente")
+                    help=tr("interface de rede (use 0.0.0.0 para acessar de outros dispositivos da LAN)", "network interface (use 0.0.0.0 to allow other devices on the LAN)"))
+    ap.add_argument("-p", "--port", type=int, default=8000, help=tr("porta (padrão: 8000)", "port (default: 8000)"))
+    ap.add_argument("--no-browser", action="store_true", help=tr("não abrir o navegador automaticamente", "do not open the browser automatically"))
     ap.add_argument("--follow-symlinks", action="store_true",
-                    help="permitir links simbólicos que apontam para fora da raiz (ex.: HD externo)")
+                    help=tr("permitir links simbólicos que apontam para fora da raiz (ex.: HD externo)", "allow symlinks that point outside the root (e.g. external drive)"))
     ap.add_argument("--ttl", type=float, default=30.0,
-                    help="segundos de cache do índice de busca/contagens (padrão: 30)")
+                    help=tr("segundos de cache do índice de busca/contagens (padrão: 30)", "seconds to cache the search index/counts (default: 30)"))
     ap.add_argument("--read-only", action="store_true",
-                    help="desativa a edição (capa, criar, renomear, mover e excluir)")
+                    help=tr("desativa a edição (capa, criar, renomear, mover e excluir)", "disable editing (cover, create, rename, move and delete)"))
     args = ap.parse_args()
 
     root = Path(args.root).expanduser()
     if not root.is_dir():
-        ap.error(f"pasta raiz não existe: {root}")
+        ap.error(tr(f"pasta raiz não existe: {root}", f"root folder does not exist: {root}"))
     set_root(root)
     FOLLOW_SYMLINKS = args.follow_symlinks
     READ_ONLY = READ_ONLY or args.read_only
@@ -1220,12 +1245,12 @@ def main() -> None:
         ALLOWED_HOSTS = set(LOOPBACK)
     else:
         ALLOWED_HOSTS = None
-        print("⚠  Servidor exposto na rede: qualquer dispositivo da LAN poderá ler os arquivos da raiz.")
+        print(tr("⚠  Servidor exposto na rede: qualquer dispositivo da LAN poderá ler os arquivos da raiz.", "⚠  Server exposed to the network: any device on the LAN can read the files under the root."))
 
     threading.Thread(target=INDEX.snapshot, daemon=True).start()  # pré-aquece o índice
     shown_host = "localhost" if args.host in LOOPBACK or args.host == "0.0.0.0" else args.host
     url = f"http://{shown_host}:{args.port}/"
-    print(f"📚 Hub de Cursos\n   Raiz: {ROOT}\n   URL:  {url}\n   Ctrl+C para encerrar.")
+    print(tr(f"📚 Hub de Cursos\n   Raiz: {ROOT}\n   URL:  {url}\n   Ctrl+C para encerrar.", f"📚 CourseVault\n   Root: {ROOT}\n   URL:  {url}\n   Press Ctrl+C to stop."))
     if not args.no_browser:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

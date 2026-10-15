@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hub de Cursos</title>
+<title>CourseVault</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%238b7cf6'/%3E%3Cpath d='M7 6.5v11l9-5.5z' fill='white'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -114,18 +114,19 @@
 
 <header class="sticky top-0 z-30 border-b border-ink-700/70 bg-ink-950/80 backdrop-blur-xl">
   <div class="max-w-[1400px] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-5">
-    <a href="#/" class="flex items-center gap-2.5 shrink-0" title="Início">
+    <a href="#/" class="flex items-center gap-2.5 shrink-0" data-i18n-title="home">
       <span class="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-accent-deep text-white shadow-lg shadow-accent/25" data-icon="book"></span>
-      <span id="hub-title" class="hidden md:inline font-semibold text-zinc-100 text-sm">Hub de Cursos</span>
+      <span id="hub-title" class="hidden md:inline font-semibold text-zinc-100 text-sm">CourseVault</span>
     </a>
     <div class="relative flex-1 max-w-2xl mx-auto">
       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" data-icon="search"></span>
       <input id="q" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Buscar cursos, aulas, arquivos ou tags…"
+             data-i18n-placeholder="search_ph"
              class="w-full h-9 pl-9 pr-10 rounded-lg bg-ink-850 border border-ink-700 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition [&::-webkit-search-cancel-button]:hidden">
       <kbd class="absolute right-2.5 top-1/2 -translate-y-1/2 hidden sm:grid place-items-center w-5 h-5 rounded border border-ink-600 text-[10px] text-zinc-500 font-mono">/</kbd>
     </div>
-    <button class="ibtn shrink-0" data-action="refresh" title="Reindexar pastas" data-icon="refresh"></button>
+    <button class="ibtn shrink-0" data-action="refresh" data-i18n-title="reindex" data-icon="refresh"></button>
+    <button id="lang-btn" class="btn shrink-0 font-mono" data-action="lang" data-i18n-title="lang_title"></button>
   </div>
   <nav id="crumbs" class="max-w-[1400px] mx-auto px-4 h-9 flex items-center gap-1.5 text-xs text-zinc-500 overflow-x-auto no-scrollbar whitespace-nowrap" aria-label="Breadcrumbs"></nav>
 </header>
@@ -141,7 +142,7 @@
         <div id="modal-sub" class="truncate text-[11px] text-zinc-500"></div>
       </div>
       <div id="modal-actions" class="flex items-center gap-1"></div>
-      <button class="ibtn" data-action="close-modal" title="Fechar (Esc)" data-icon="x"></button>
+      <button class="ibtn" data-action="close-modal" data-i18n-title="close_esc" data-icon="x"></button>
     </div>
     <div id="modal-body" class="flex-1 overflow-auto"></div>
   </div>
@@ -151,10 +152,10 @@
 
 <div id="selbar" class="fixed bottom-5 left-1/2 z-40 hidden w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-ink-600 bg-ink-850/95 px-3 py-2 shadow-2xl shadow-black/60 backdrop-blur">
   <span id="sel-count" class="mr-1 text-sm font-medium text-zinc-200 tabular-nums"></span>
-  <button class="btn" data-action="sel-all">Selecionar tudo</button>
+  <button class="btn" data-action="sel-all" data-i18n="sel_all"></button>
   <button class="btn" data-action="sel-move" data-needs-sel></button>
   <button class="btn text-red-300 hover:text-red-200" data-action="sel-trash" data-needs-sel></button>
-  <button class="btn" data-action="sel-cancel">Cancelar</button>
+  <button class="btn" data-action="sel-cancel" data-i18n="cancel"></button>
 </div>
 
 <div id="toast"class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-lg border border-ink-600 bg-ink-800/95 px-4 py-2.5 text-sm text-zinc-200 shadow-xl opacity-0 translate-y-2 pointer-events-none transition duration-200"></div>
@@ -212,8 +213,8 @@ function go(path, params) {
   const h = hashFor(path, params);
   if (location.hash === h) route(); else location.hash = h;
 }
-async function api(url, opts) {
-  const r = await fetch(url, opts);
+async function api(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { 'X-Lang': LANG, ...(opts.headers || {}) } });
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`, data = null;
     try { data = await r.json(); if (typeof data.detail === 'string') msg = data.detail; } catch {}
@@ -293,6 +294,7 @@ const ICONS = {
   move: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 13h6m-2-2 2 2-2 2"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
   checksq: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
 };
 const icon = (n, cls = 'w-4 h-4') =>
   `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
@@ -304,6 +306,154 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('hub:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('hub:' + k, JSON.stringify(v)); } catch {} },
 };
+/* ------------------------------------------------------------------ */
+/* Idioma (pt / en)                                                     */
+/* ------------------------------------------------------------------ */
+const I18N = {
+  pt: {
+    home: 'Início', search_ph: 'Buscar cursos, aulas, arquivos ou tags…', reindex: 'Reindexar pastas',
+    close_esc: 'Fechar (Esc)', sel_all: 'Selecionar tudo', cancel: 'Cancelar', lang_title: 'Mudar idioma (Change language)',
+    fav_add: 'Favoritar', fav_remove: 'Remover dos favoritos', fav_added: 'Adicionado aos favoritos', fav_removed: 'Removido dos favoritos',
+    more: 'Mais ações', pinned: 'Fixado',
+    u_lesson: ['aula', 'aulas'], u_material: ['material', 'materiais'], u_folder: ['pasta', 'pastas'], u_file: ['arquivo', 'arquivos'],
+    u_selected: ['selecionado', 'selecionados'], u_item: ['item', 'itens'],
+    empty_short: 'vazia', prog: '{done}/{total} aulas · {pct}%',
+    st_done: 'Concluído', st_progress: 'Em andamento · {pct}%', st_new: 'Não iniciado',
+    mark_watched: 'Marcar como assistida', stopped_at: 'Parou em', subs_avail: 'Legendas disponíveis', play: 'Reproduzir',
+    open_tab: 'Abrir em nova aba', download: 'Baixar', autoplay: 'Autoplay', mark_all: 'Marcar todas',
+    s_lessons: 'Aulas', s_materials: 'Materiais de apoio', s_images: 'Imagens', s_others: 'Outros arquivos',
+    library: 'Biblioteca local', stat_courses: 'cursos', stat_lessons: 'aulas', stat_materials: 'materiais',
+    continue_watching: 'Continuar assistindo', stopped_at_l: 'parou em {t}', filter: 'Filtrar', clear: 'limpar',
+    s_favs: 'Favoritos', s_all: 'Todos os cursos', s_courses: 'Cursos', no_tag_match: 'Nenhum curso com essas tags.',
+    clear_filters: 'Limpar filtros', no_root_folders: 'Nenhuma pasta encontrada na raiz.',
+    new_folder: 'Nova pasta', new_folder_title: 'Criar uma pasta aqui', select: 'Selecionar',
+    select_title: 'Selecionar vários itens para mover ou excluir', edit_cover: 'Editar capa',
+    edit_cover_title: 'Trocar, remover ou ajustar a capa', back: 'Voltar', rewatch: 'Rever do início', start: 'Começar',
+    continue: 'Continuar', continue_x: 'Continuar: {t}', s_modules: 'Módulos', folder_empty: 'Esta pasta está vazia.',
+    err_open: 'Não foi possível abrir esta pasta', back_home: 'Voltar ao início',
+    prev: 'Anterior', next: 'Próxima', speed: 'Velocidade', fullscreen: 'Tela cheia', new_tab: 'Nova aba', close: 'Fechar',
+    resuming: 'Retomando de {t}',
+    cant_play: 'O navegador não conseguiu reproduzir este arquivo (codec/contêiner não suportado — comum em .mkv com HEVC/AC3).',
+    cant_play_dl: 'Baixe', cant_play_tail: 'e abra no VLC/mpv.',
+    downloading: 'Baixando arquivo…', copy_content: 'Copiar conteúdo', loading: 'Carregando…',
+    truncated: 'Exibindo os primeiros 2 MB de {size}. Baixe para ver o arquivo completo.',
+    view_code: 'Ver código', view_rendered: 'Ver renderizado',
+    ce_pos: 'Enquadramento vertical', ce_top: 'Topo', ce_center: 'Centro', ce_bottom: 'Base',
+    ce_choose: 'Escolher imagem', ce_drag: ', arrastar aqui<br>ou colar com Ctrl+V', ce_types: 'JPG, PNG, WebP, GIF ou AVIF · até 15 MB',
+    ce_or_url: 'Ou usar uma URL', ce_use: 'Usar', ce_remove: 'Remover capa', save: 'Salvar',
+    ce_new_img: 'Nova imagem: {name} ({size})', ce_pasted: 'colada', ce_new_url: 'Nova capa a partir da URL',
+    ce_will_remove: 'A capa será removida (o arquivo vira .bak na pasta)',
+    ce_bad_type: 'Use uma imagem JPG, PNG, WebP, GIF ou AVIF', ce_too_big: 'Imagem maior que 15 MB',
+    ce_bad_url: 'Informe uma URL começando com http:// ou https://', ce_removed: 'Capa removida', ce_updated: 'Capa atualizada',
+    save_failed: 'Falha ao salvar: {msg}', ce_drop_file: 'Solte um arquivo de imagem do computador',
+    rename: 'Renomear', move_to: 'Mover para…', delete: 'Excluir', sel_hint: 'Clique nos itens para selecionar',
+    create: 'Criar', in_x: 'Em {t}', folder_created: 'Pasta criada',
+    rename_hint_conf: 'O nome exibido (“{t}”) vem do course.conf e não muda.',
+    rename_hint_subs: 'Legendas com o mesmo nome são renomeadas junto.',
+    rename_folder: 'Renomear pasta', rename_file: 'Renomear arquivo', renamed: 'Renomeado',
+    trash_confirm: 'Mover para a lixeira', trash_q_one: 'Mover este item para a lixeira?', trash_q_many: 'Mover estes {n} itens para a lixeira?',
+    trash_note: 'Nada é apagado: vai para a pasta <code class="text-zinc-300">.lixeira</code> na raiz dos cursos, mantendo o caminho original.',
+    trashed: 'Movido para a lixeira ({f})',
+    move_one: 'Mover “{n}”', move_many: 'Mover {n} itens', pick_dest: 'Escolha a pasta de destino',
+    pk_search: 'Buscar pasta em toda a biblioteca…', pk_newhere: 'Nova pasta aqui', pk_nosub: 'Sem subpastas aqui.',
+    move_to_x: 'Mover para “{t}”', pk_inside: 'Não dá para mover uma pasta para dentro dela mesma.',
+    pk_same: 'Os itens já estão nesta pasta.', pk_none: 'Nenhuma pasta encontrada.', moved_to: 'Movido para “{t}”',
+    pk_newname: 'Nome da nova pasta', search_err: 'Erro na busca: {msg}',
+    g_folders: 'Pastas', g_lessons: 'Aulas', g_materials: 'Materiais', g_images: 'Imagens', g_others: 'Outros',
+    search: 'Busca', results: '{n} resultado(s)', only_in: 'Somente em', nothing_found: 'Nada encontrado. Tente outro termo ou uma tag.',
+    unmarked: 'Aulas desmarcadas', all_marked: 'Todas as aulas marcadas como assistidas', pip_unavail: 'PiP indisponível: {msg}',
+    copied: 'Conteúdo copiado', copy_failed: 'Não foi possível copiar',
+    reindexed: 'Índice atualizado · {f} pastas, {e} itens', reindex_failed: 'Falha ao reindexar: {msg}',
+  },
+  en: {
+    home: 'Home', search_ph: 'Search courses, lessons, files or tags…', reindex: 'Reindex folders',
+    close_esc: 'Close (Esc)', sel_all: 'Select all', cancel: 'Cancel', lang_title: 'Change language (Mudar idioma)',
+    fav_add: 'Add to favorites', fav_remove: 'Remove from favorites', fav_added: 'Added to favorites', fav_removed: 'Removed from favorites',
+    more: 'More actions', pinned: 'Pinned',
+    u_lesson: ['lesson', 'lessons'], u_material: ['material', 'materials'], u_folder: ['folder', 'folders'], u_file: ['file', 'files'],
+    u_selected: ['selected', 'selected'], u_item: ['item', 'items'],
+    empty_short: 'empty', prog: '{done}/{total} lessons · {pct}%',
+    st_done: 'Completed', st_progress: 'In progress · {pct}%', st_new: 'Not started',
+    mark_watched: 'Mark as watched', stopped_at: 'Stopped at', subs_avail: 'Subtitles available', play: 'Play',
+    open_tab: 'Open in new tab', download: 'Download', autoplay: 'Autoplay', mark_all: 'Mark all',
+    s_lessons: 'Lessons', s_materials: 'Materials', s_images: 'Images', s_others: 'Other files',
+    library: 'Local library', stat_courses: 'courses', stat_lessons: 'lessons', stat_materials: 'materials',
+    continue_watching: 'Continue watching', stopped_at_l: 'stopped at {t}', filter: 'Filter', clear: 'clear',
+    s_favs: 'Favorites', s_all: 'All courses', s_courses: 'Courses', no_tag_match: 'No course has these tags.',
+    clear_filters: 'Clear filters', no_root_folders: 'No folders found in the root.',
+    new_folder: 'New folder', new_folder_title: 'Create a folder here', select: 'Select',
+    select_title: 'Select several items to move or delete', edit_cover: 'Edit cover',
+    edit_cover_title: 'Change, remove or adjust the cover', back: 'Back', rewatch: 'Watch again', start: 'Start',
+    continue: 'Continue', continue_x: 'Continue: {t}', s_modules: 'Modules', folder_empty: 'This folder is empty.',
+    err_open: 'Could not open this folder', back_home: 'Back to home',
+    prev: 'Previous', next: 'Next', speed: 'Speed', fullscreen: 'Fullscreen', new_tab: 'New tab', close: 'Close',
+    resuming: 'Resuming from {t}',
+    cant_play: "The browser couldn't play this file (unsupported codec/container — common with .mkv using HEVC/AC3).",
+    cant_play_dl: 'Download', cant_play_tail: 'it and open it in VLC/mpv.',
+    downloading: 'Downloading file…', copy_content: 'Copy content', loading: 'Loading…',
+    truncated: 'Showing the first 2 MB of {size}. Download to see the full file.',
+    view_code: 'View source', view_rendered: 'View rendered',
+    ce_pos: 'Vertical framing', ce_top: 'Top', ce_center: 'Center', ce_bottom: 'Bottom',
+    ce_choose: 'Choose an image', ce_drag: ', drag it here<br>or paste with Ctrl+V', ce_types: 'JPG, PNG, WebP, GIF or AVIF · up to 15 MB',
+    ce_or_url: 'Or use a URL', ce_use: 'Use', ce_remove: 'Remove cover', save: 'Save',
+    ce_new_img: 'New image: {name} ({size})', ce_pasted: 'pasted', ce_new_url: 'New cover from the URL',
+    ce_will_remove: 'The cover will be removed (the file is kept as .bak in the folder)',
+    ce_bad_type: 'Use a JPG, PNG, WebP, GIF or AVIF image', ce_too_big: 'Image larger than 15 MB',
+    ce_bad_url: 'Enter a URL starting with http:// or https://', ce_removed: 'Cover removed', ce_updated: 'Cover updated',
+    save_failed: 'Save failed: {msg}', ce_drop_file: 'Drop an image file from your computer',
+    rename: 'Rename', move_to: 'Move to…', delete: 'Delete', sel_hint: 'Click items to select them',
+    create: 'Create', in_x: 'In {t}', folder_created: 'Folder created',
+    rename_hint_conf: 'The displayed name (“{t}”) comes from course.conf and does not change.',
+    rename_hint_subs: 'Subtitles with the same name are renamed too.',
+    rename_folder: 'Rename folder', rename_file: 'Rename file', renamed: 'Renamed',
+    trash_confirm: 'Move to trash', trash_q_one: 'Move this item to the trash?', trash_q_many: 'Move these {n} items to the trash?',
+    trash_note: 'Nothing is erased: items go to the <code class="text-zinc-300">.lixeira</code> (trash) folder in the library root, keeping their original path.',
+    trashed: 'Moved to trash ({f})',
+    move_one: 'Move “{n}”', move_many: 'Move {n} items', pick_dest: 'Choose the destination folder',
+    pk_search: 'Search folders in the whole library…', pk_newhere: 'New folder here', pk_nosub: 'No subfolders here.',
+    move_to_x: 'Move to “{t}”', pk_inside: 'A folder cannot be moved into itself.',
+    pk_same: 'The items are already in this folder.', pk_none: 'No folders found.', moved_to: 'Moved to “{t}”',
+    pk_newname: 'New folder name', search_err: 'Search error: {msg}',
+    g_folders: 'Folders', g_lessons: 'Lessons', g_materials: 'Materials', g_images: 'Images', g_others: 'Other',
+    search: 'Search', results: '{n} result(s)', only_in: 'Only in', nothing_found: 'Nothing found. Try another term or a tag.',
+    unmarked: 'Lessons unmarked', all_marked: 'All lessons marked as watched', pip_unavail: 'PiP unavailable: {msg}',
+    copied: 'Content copied', copy_failed: 'Could not copy',
+    reindexed: 'Index updated · {f} folders, {e} items', reindex_failed: 'Reindex failed: {msg}',
+  },
+};
+let LANG = (() => {
+  const saved = store.get('lang', null);
+  if (saved === 'pt' || saved === 'en') return saved;
+  return /^pt/i.test(navigator.language || '') ? 'pt' : 'en';
+})();
+// t('chave', { var }) troca {var}; pl(n, 'u_lesson') -> "3 aulas" / "3 lessons".
+const t = (k, p = {}) => String(I18N[LANG][k] ?? I18N.pt[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => p[n] ?? '');
+const pl = (n, k) => { const [one, many] = I18N[LANG][k]; return `${n} ${n === 1 ? one : many}`; };
+
+function applyStatic() {
+  document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
+  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $$('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  $$('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  $('#lang-btn').innerHTML = `${icon('globe', 'w-3.5 h-3.5')}<span>${LANG.toUpperCase()}</span>`;
+}
+function setLang(lang) {
+  LANG = lang;
+  store.set('lang', lang);
+  applyStatic();
+  closeMenu();
+  closeModal();
+  const playing = S.playing;
+  if (playing >= 0) closePlayer();                      // salva a posição; reabre abaixo
+  if (S.data) {
+    const y = window.scrollY;
+    renderView(S.data);
+    window.scrollTo(0, y);
+    if (playing >= 0) openPlayer(playing);
+  } else route({ force: true });
+  if (S.query) runSearch();
+}
+
 const watched = store.get('watched', {});
 const positions = store.get('pos', {});
 const prefs = Object.assign({ autoplay: true, rate: 1 }, store.get('prefs', {}));
@@ -357,7 +507,7 @@ function progress(prefix, total) {
   const done = Math.min(watchedCount(prefix), total);
   return { done, total, pct: Math.round(done / total * 100) };
 }
-const progText = p => `${p.done}/${p.total} aulas · ${p.pct}%`;
+const progText = p => t('prog', p);
 function setWatched(path, val) {
   if (val) watched[path] = Date.now(); else delete watched[path];
   store.set('watched', watched);
@@ -376,12 +526,12 @@ function progBar(prefix, total, cls = 'h-1') {
 function toggleFav(path) {
   if (favs[path]) delete favs[path]; else favs[path] = Date.now();
   store.set('favs', favs);
-  toast(favs[path] ? 'Adicionado aos favoritos' : 'Removido dos favoritos');
+  toast(t(favs[path] ? 'fav_added' : 'fav_removed'));
   if (S.playing === -1 && S.data) { const y = window.scrollY; renderView(S.data); window.scrollTo(0, y); return; }
   // com um vídeo aberto, só atualiza as estrelas (re-renderizar derrubaria o player)
   $$('[data-fav]').filter(el => el.dataset.fav === path).forEach(el => {
     el.classList.toggle('is-fav', !!favs[path]);
-    el.title = favs[path] ? 'Remover dos favoritos' : 'Favoritar';
+    el.title = t(favs[path] ? 'fav_remove' : 'fav_add');
     el.setAttribute('aria-pressed', String(!!favs[path]));
   });
 }
@@ -417,12 +567,12 @@ const bannerPos = conf => `object-position:50% ${conf.banner_pos ?? 50}%`;
 function favBtn(path, cls = '', iconCls = 'w-3.5 h-3.5', hover = false) {
   const on = isFav(path);
   return `<button type="button" class="fav inline-grid place-items-center shrink-0 rounded-full ${on ? 'is-fav' : ''} ${cls}" data-fav="${esc(path)}"${hover ? ' data-hover' : ''}
-    title="${on ? 'Remover dos favoritos' : 'Favoritar'}" aria-pressed="${on}">${icon('star', iconCls + ' fav-off')}${icon('starFill', iconCls + ' fav-on')}</button>`;
+    title="${t(on ? 'fav_remove' : 'fav_add')}" aria-pressed="${on}">${icon('star', iconCls + ' fav-off')}${icon('starFill', iconCls + ' fav-on')}</button>`;
 }
 // <span role=button>: pode ficar dentro de <a>/<button> (cards, tiles de imagem) sem quebrar o HTML.
 function kebab(path, cls = '', hover = true) {
   if (!canWrite()) return '';
-  return `<span role="button" tabindex="0" aria-haspopup="menu" title="Mais ações" data-menu="${esc(path)}"${hover ? ' data-hover' : ''}
+  return `<span role="button" tabindex="0" aria-haspopup="menu" title="${t('more')}" data-menu="${esc(path)}"${hover ? ' data-hover' : ''}
     class="kebab inline-grid place-items-center shrink-0 ${cls}">${icon('dots', 'w-4 h-4')}</span>`;
 }
 const selbox = () => canWrite()
@@ -435,11 +585,11 @@ function tagChip(t, count) {
 }
 function metaLine(st, cls = 'text-xs') {
   const parts = [];
-  if (st.media) parts.push(['film', plural(st.media, 'aula', 'aulas')]);
-  if (st.docs) parts.push(['file', plural(st.docs, 'material', 'materiais')]);
-  if (st.dirs) parts.push(['folder', plural(st.dirs, 'pasta', 'pastas')]);
+  if (st.media) parts.push(['film', pl(st.media, 'u_lesson')]);
+  if (st.docs) parts.push(['file', pl(st.docs, 'u_material')]);
+  if (st.dirs) parts.push(['folder', pl(st.dirs, 'u_folder')]);
   const rest = st.files - st.media - st.docs;
-  if (!parts.length) parts.push(['box', rest > 0 ? plural(rest, 'arquivo', 'arquivos') : 'vazia']);
+  if (!parts.length) parts.push(['box', rest > 0 ? pl(rest, 'u_file') : t('empty_short')]);
   return `<div class="flex flex-wrap gap-x-3 gap-y-1 ${cls} text-zinc-500">${parts.map(([i, t]) =>
     `<span class="inline-flex items-center gap-1">${icon(i, 'w-3.5 h-3.5')}${t}</span>`).join('')}</div>`;
 }
@@ -447,9 +597,9 @@ function statusChip(conf, p) {
   let label, color;
   if (conf.status) { label = conf.status; color = 'bg-accent/20 text-accent-soft border-accent/30'; }
   else if (!p.total) return '';
-  else if (p.pct >= 100) { label = 'Concluído'; color = 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30'; }
-  else if (p.done > 0) { label = `Em andamento · ${p.pct}%`; color = 'bg-amber-500/15 text-amber-200 border-amber-400/30'; }
-  else { label = 'Não iniciado'; color = 'bg-black/40 text-zinc-300 border-white/10'; }
+  else if (p.pct >= 100) { label = t('st_done'); color = 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30'; }
+  else if (p.done > 0) { label = t('st_progress', p); color = 'bg-amber-500/15 text-amber-200 border-amber-400/30'; }
+  else { label = t('st_new'); color = 'bg-black/40 text-zinc-300 border-white/10'; }
   return `<span class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold backdrop-blur ${color}">
     <span class="w-1.5 h-1.5 rounded-full bg-current"></span>${esc(label)}</span>`;
 }
@@ -464,7 +614,7 @@ function courseCard(d) {
         <div class="flex items-center gap-1.5">
           ${selbox()}
           ${favBtn(d.path, 'w-7 h-7 bg-black/50 backdrop-blur hover:bg-black/70', 'w-3.5 h-3.5', true)}
-          ${c.pinned ? `<span class="inline-grid place-items-center w-6 h-6 rounded-full bg-black/50 text-accent-soft backdrop-blur" title="Fixado">${icon('pin', 'w-3.5 h-3.5')}</span>` : ''}
+          ${c.pinned ? `<span class="inline-grid place-items-center w-6 h-6 rounded-full bg-black/50 text-accent-soft backdrop-blur" title="${t('pinned')}">${icon('pin', 'w-3.5 h-3.5')}</span>` : ''}
         </div>
         <div class="flex items-center gap-1.5">
           ${statusChip(c, p)}
@@ -513,19 +663,19 @@ function lessonRow(m, i) {
   return `<div class="lesson ${watched[m.path] ? 'is-watched' : ''}" data-row="${i}" data-watch="${esc(m.path)}"${selAttr(m.path)}>
     <div class="group flex items-center gap-3 px-3 sm:px-4 py-2.5 hover:bg-white/[.02]">
       ${selbox()}
-      <button class="check" data-action="toggle-watched" data-i="${i}" title="Marcar como assistida">${icon('check', 'w-3 h-3')}</button>
+      <button class="check" data-action="toggle-watched" data-i="${i}" title="${t('mark_watched')}">${icon('check', 'w-3 h-3')}</button>
       <button class="flex flex-1 min-w-0 items-center gap-3 text-left" data-action="play" data-i="${i}">
         <span class="lesson-num">${esc(m.num || String(i + 1).padStart(2, '0'))}</span>
         <span class="lesson-title truncate text-sm text-zinc-200" title="${esc(m.name)}">${esc(m.title)}</span>
       </button>
       <span class="hidden sm:flex items-center gap-2 shrink-0 text-[11px] text-zinc-500">
-        ${pos ? `<span class="inline-flex items-center gap-1 text-accent-soft/80" title="Parou em">${icon('clock', 'w-3 h-3')}${fmtTime(pos)}</span>` : ''}
-        ${m.subtitles.length ? '<span class="badge" title="Legendas disponíveis">CC</span>' : ''}
+        ${pos ? `<span class="inline-flex items-center gap-1 text-accent-soft/80" title="${t('stopped_at')}">${icon('clock', 'w-3 h-3')}${fmtTime(pos)}</span>` : ''}
+        ${m.subtitles.length ? `<span class="badge" title="${t('subs_avail')}">CC</span>` : ''}
         <span class="badge">${esc(m.ext.slice(1))}</span>
         <span class="w-16 text-right tabular-nums">${fmtSize(m.size)}</span>
       </span>
       ${kebab(m.path, 'w-8 h-8 rounded-md hover:bg-ink-700')}
-      <button class="ibtn text-zinc-300" data-action="play" data-i="${i}" title="Reproduzir">${icon(m.kind === 'audio' ? 'music' : 'play', 'w-4 h-4')}</button>
+      <button class="ibtn text-zinc-300" data-action="play" data-i="${i}" title="${t('play')}">${icon(m.kind === 'audio' ? 'music' : 'play', 'w-4 h-4')}</button>
     </div>
   </div>`;
 }
@@ -549,8 +699,8 @@ function fileTile(f, list, i) {
       <div class="text-[11px] text-zinc-500 uppercase tracking-wide">${esc(ext)} · ${fmtSize(f.size)}</div>
     </div>
     <div class="flex items-center opacity-70 group-hover:opacity-100 transition">
-      <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${icon('external')}</a>
-      <a class="ibtn" href="${fileUrl(f.path, 1)}" title="Baixar">${icon('download')}</a>
+      <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="${t('open_tab')}">${icon('external')}</a>
+      <a class="ibtn" href="${fileUrl(f.path, 1)}" title="${t('download')}">${icon('download')}</a>
       ${kebab(f.path, 'w-8 h-8 rounded-md hover:bg-ink-700', false)}
     </div>
   </div>`;
@@ -568,15 +718,15 @@ function fileSections(d) {
   if (d.media.length) {
     const tools = `<div class="flex items-center gap-2 text-xs text-zinc-400">
       <label class="inline-flex items-center gap-2 cursor-pointer select-none mr-2">
-        <input type="checkbox" data-action="autoplay" class="accent-[#8b7cf6]" ${prefs.autoplay ? 'checked' : ''}> Autoplay
+        <input type="checkbox" data-action="autoplay" class="accent-[#8b7cf6]" ${prefs.autoplay ? 'checked' : ''}> ${t('autoplay')}
       </label>
-      <button class="btn" data-action="mark-all">${icon('check', 'w-3.5 h-3.5')} Marcar todas</button></div>`;
-    html += section('film', 'Aulas', d.media.length,
+      <button class="btn" data-action="mark-all">${icon('check', 'w-3.5 h-3.5')} ${t('mark_all')}</button></div>`;
+    html += section('film', t('s_lessons'), d.media.length,
       `<div class="rounded-xl border border-ink-700 bg-ink-850 divide-y divide-ink-700/70 overflow-hidden">${d.media.map(lessonRow).join('')}</div>`, tools);
   }
-  if (d.docs.length) html += section('book', 'Materiais de apoio', d.docs.length,
+  if (d.docs.length) html += section('book', t('s_materials'), d.docs.length,
     `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${d.docs.map((f, i) => fileTile(f, 'docs', i)).join('')}</div>`);
-  if (d.images.length) html += section('image', 'Imagens', d.images.length,
+  if (d.images.length) html += section('image', t('s_images'), d.images.length,
     `<div class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">${d.images.map((f, i) =>
       `<button class="group relative aspect-video rounded-lg overflow-hidden border border-ink-700 bg-ink-850 hover:border-accent/50" data-action="preview" data-list="images" data-i="${i}"${selAttr(f.path)} title="${esc(f.name)}">
         <img src="${fileUrl(f.path)}" alt="" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-[1.03] transition duration-300">
@@ -584,7 +734,7 @@ function fileSections(d) {
         <span class="absolute top-2 left-2">${selbox()}</span>
         <span class="absolute top-1.5 right-1.5">${kebab(f.path, 'w-7 h-7 rounded-full bg-black/60 text-zinc-200 hover:bg-black/80')}</span>
       </button>`).join('')}</div>`);
-  if (d.others.length) html += section('box', 'Outros arquivos', d.others.length,
+  if (d.others.length) html += section('box', t('s_others'), d.others.length,
     `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${d.others.map((f, i) => fileTile(f, 'others', i)).join('')}</div>`);
   return html;
 }
@@ -615,12 +765,12 @@ function renderRoot(d) {
 
   let html = `<section class="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
     <div>
-      <p class="text-[11px] font-semibold uppercase tracking-[.2em] text-accent-soft/80">Biblioteca local</p>
+      <p class="text-[11px] font-semibold uppercase tracking-[.2em] text-accent-soft/80">${t('library')}</p>
       <h1 class="mt-1 text-3xl sm:text-4xl font-bold tracking-tight text-zinc-50">${esc(d.hub.title)}</h1>
       ${d.conf.description ? `<p class="mt-2 max-w-2xl text-sm text-zinc-400">${esc(d.conf.description)}</p>` : ''}
     </div>
     <div class="grid grid-cols-3 gap-2 sm:gap-3 text-center">
-      ${[[d.dirs.length, 'cursos'], [d.stats.media, 'aulas'], [d.stats.docs, 'materiais']].map(([n, l]) =>
+      ${[[d.dirs.length, t('stat_courses')], [d.stats.media, t('stat_lessons')], [d.stats.docs, t('stat_materials')]].map(([n, l]) =>
         `<div class="rounded-xl border border-ink-700 bg-ink-850 px-4 py-2.5"><div class="text-xl font-semibold text-zinc-100 tabular-nums">${n}</div><div class="text-[11px] text-zinc-500">${l}</div></div>`).join('')}
     </div>
   </section>`;
@@ -634,35 +784,35 @@ function renderRoot(d) {
     html += `<a href="${hashFor(last.folder, { play: name })}" class="group mb-8 flex items-center gap-4 rounded-xl border border-accent/25 bg-gradient-to-r from-accent/10 to-transparent p-3 pr-4 hover:border-accent/50 transition">
       <span class="grid place-items-center w-10 h-10 rounded-full bg-accent text-white shadow-lg shadow-accent/30">${icon('play', 'w-4 h-4')}</span>
       <div class="min-w-0 flex-1">
-        <div class="text-[11px] uppercase tracking-wider text-accent-soft/90">Continuar assistindo</div>
+        <div class="text-[11px] uppercase tracking-wider text-accent-soft/90">${t('continue_watching')}</div>
         <div class="truncate text-sm font-medium text-zinc-100">${esc(last.title)}</div>
-        <div class="truncate text-xs text-zinc-500">${esc(last.folderTitle || last.folder)}${positions[last.path] ? ` · parou em ${fmtTime(positions[last.path])}` : ''}</div>
+        <div class="truncate text-xs text-zinc-500">${esc(last.folderTitle || last.folder)}${positions[last.path] ? ` · ${t('stopped_at_l', { t: fmtTime(positions[last.path]) })}` : ''}</div>
       </div>
       <span class="text-zinc-500 group-hover:text-zinc-200">${icon('chevron')}</span></a>`;
   }
 
   const tools = canWrite() ? `<div class="ml-auto flex gap-2">${folderTools()}</div>` : '';
   if (tags.length || tools) html += `<div class="mb-8 flex flex-wrap items-center gap-2">
-      ${tags.length ? `<span class="mr-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">${icon('tag', 'w-3.5 h-3.5')} Filtrar</span>
+      ${tags.length ? `<span class="mr-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">${icon('tag', 'w-3.5 h-3.5')} ${t('filter')}</span>
       ${tags.map(([t, n]) => tagChip(t, n)).join('')}
-      ${S.activeTags.size ? `<button class="ml-1 text-xs text-zinc-400 hover:text-white underline underline-offset-4" data-action="clear-tags">limpar</button>` : ''}` : ''}
+      ${S.activeTags.size ? `<button class="ml-1 text-xs text-zinc-400 hover:text-white underline underline-offset-4" data-action="clear-tags">${t('clear')}</button>` : ''}` : ''}
       ${tools}
     </div>`;
 
   const grid = items => `<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">${items.map(courseCard).join('')}</div>`;
-  if (pinned.length) html += section('star', 'Favoritos', pinned.length, grid(pinned));
-  if (rest.length) html += section('layers', pinned.length ? 'Todos os cursos' : 'Cursos', rest.length, grid(rest));
+  if (pinned.length) html += section('star', t('s_favs'), pinned.length, grid(pinned));
+  if (rest.length) html += section('layers', t(pinned.length ? 's_all' : 's_courses'), rest.length, grid(rest));
   if (!visible.length) html += d.dirs.length
-    ? empty('Nenhum curso com essas tags.', `<button class="btn mt-4" data-action="clear-tags">Limpar filtros</button>`)
-    : empty('Nenhuma pasta encontrada na raiz.', `<code class="mt-2 block text-xs text-zinc-500">${esc(d.hub.root)}</code>`);
+    ? empty(t('no_tag_match'), `<button class="btn mt-4" data-action="clear-tags">${t('clear_filters')}</button>`)
+    : empty(t('no_root_folders'), `<code class="mt-2 block text-xs text-zinc-500">${esc(d.hub.root)}</code>`);
   html += fileSections(d);
   $('#app').innerHTML = html;
   paintSel();
 }
 
 function folderTools(cls = '') {
-  return `<button class="btn ${cls}" data-action="new-folder" title="Criar uma pasta aqui">${icon('folderPlus', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Nova pasta</span></button>
-    <button class="btn ${cls} ${S.selecting ? 'is-on' : ''}" data-action="select" title="Selecionar vários itens para mover ou excluir">${icon('checksq', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Selecionar</span></button>`;
+  return `<button class="btn ${cls}" data-action="new-folder" title="${t('new_folder_title')}">${icon('folderPlus', 'w-3.5 h-3.5')}<span class="hidden sm:inline">${t('new_folder')}</span></button>
+    <button class="btn ${cls} ${S.selecting ? 'is-on' : ''}" data-action="select" title="${t('select_title')}">${icon('checksq', 'w-3.5 h-3.5')}<span class="hidden sm:inline">${t('select')}</span></button>`;
 }
 
 function renderFolder(d) {
@@ -682,15 +832,15 @@ function renderFolder(d) {
     <div class="relative flex min-h-[200px] flex-col justify-end gap-4 p-5 sm:p-8">
       ${canWrite() ? `<div class="absolute top-4 right-4 flex items-center gap-2">
         ${folderTools('bg-black/40 backdrop-blur')}
-        <button class="btn bg-black/40 backdrop-blur" data-action="edit-cover" title="Trocar, remover ou ajustar a capa">${icon('image', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Editar capa</span></button>
+        <button class="btn bg-black/40 backdrop-blur" data-action="edit-cover" title="${t('edit_cover_title')}">${icon('image', 'w-3.5 h-3.5')}<span class="hidden sm:inline">${t('edit_cover')}</span></button>
         ${kebab(d.path, 'w-8 h-8 rounded-md border border-ink-700 bg-black/40 backdrop-blur hover:bg-ink-700', false)}
       </div>` : ''}
-      ${d.parent != null ? `<a href="${hashFor(d.parent)}" class="inline-flex w-max items-center gap-1 text-xs text-zinc-400 hover:text-white">${icon('back', 'w-3.5 h-3.5')} Voltar</a>` : ''}
+      ${d.parent != null ? `<a href="${hashFor(d.parent)}" class="inline-flex w-max items-center gap-1 text-xs text-zinc-400 hover:text-white">${icon('back', 'w-3.5 h-3.5')} ${t('back')}</a>` : ''}
       <div>
         <h1 class="flex items-baseline gap-3 text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">
           ${lab.num ? `<span class="font-mono text-lg text-accent-soft/80">${esc(lab.num)}</span>` : ''}<span>${esc(lab.text)}</span>
           ${favBtn(d.path, 'w-8 h-8 self-center hover:bg-white/10', 'w-[18px] h-[18px]')}
-          ${c.pinned ? `<span class="text-accent-soft" title="Fixado">${icon('pin', 'w-4 h-4')}</span>` : ''}</h1>
+          ${c.pinned ? `<span class="text-accent-soft" title="${t('pinned')}">${icon('pin', 'w-4 h-4')}</span>` : ''}</h1>
         ${c.description ? `<p class="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-300/90">${esc(c.description)}</p>` : ''}
       </div>
       ${c.tags.length ? `<div class="flex flex-wrap gap-1.5">${c.tags.map(t => tagChip(t)).join('')}</div>` : ''}
@@ -701,16 +851,16 @@ function renderFolder(d) {
         ${c.status ? statusChip(c, p) : ''}
       </div>
       ${d.media.length || resume ? `<div class="flex flex-wrap gap-2">
-        ${d.media.length ? `<button class="btn-primary" data-action="continue">${icon('play', 'w-4 h-4')} ${firstTodo === -1 ? 'Rever do início' : firstTodo === 0 && !p.done ? 'Começar' : 'Continuar'}</button>` : ''}
-        ${resume ? `<a class="btn h-9 px-3 text-sm max-w-full" href="${hashFor(last.folder, { play: last.path.split('/').pop() })}">${icon('clock', 'w-4 h-4')}<span class="truncate">Continuar: ${esc(last.title)}</span></a>` : ''}
+        ${d.media.length ? `<button class="btn-primary" data-action="continue">${icon('play', 'w-4 h-4')} ${t(firstTodo === -1 ? 'rewatch' : firstTodo === 0 && !p.done ? 'start' : 'continue')}</button>` : ''}
+        ${resume ? `<a class="btn h-9 px-3 text-sm max-w-full" href="${hashFor(last.folder, { play: last.path.split('/').pop() })}">${icon('clock', 'w-4 h-4')}<span class="truncate">${esc(t('continue_x', { t: last.title }))}</span></a>` : ''}
       </div>` : ''}
     </div>
   </header>`;
 
-  if (d.dirs.length) html += section('layers', 'Módulos', d.dirs.length,
+  if (d.dirs.length) html += section('layers', t('s_modules'), d.dirs.length,
     `<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">${favFirst(d.dirs).map(moduleCard).join('')}</div>`);
   html += fileSections(d);
-  if (!d.dirs.length && !d.media.length && !d.docs.length && !d.images.length && !d.others.length) html += empty('Esta pasta está vazia.');
+  if (!d.dirs.length && !d.media.length && !d.docs.length && !d.images.length && !d.others.length) html += empty(t('folder_empty'));
   $('#app').innerHTML = html;
   paintSel();
   $('.pill-active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -735,11 +885,11 @@ function renderLoading() {
     <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">${'<div class="h-64 rounded-xl bg-ink-850"></div>'.repeat(6)}</div></div>`;
 }
 function renderError(err) {
-  $('#crumbs').innerHTML = `<a href="#/" class="inline-flex items-center gap-1.5 hover:text-zinc-200">${icon('home', 'w-3.5 h-3.5')} Início</a>`;
+  $('#crumbs').innerHTML = `<a href="#/" class="inline-flex items-center gap-1.5 hover:text-zinc-200">${icon('home', 'w-3.5 h-3.5')} ${t('home')}</a>`;
   $('#app').innerHTML = `<div class="grid place-items-center py-24 text-center"><div>
-    <p class="text-lg font-semibold text-zinc-200">Não foi possível abrir esta pasta</p>
+    <p class="text-lg font-semibold text-zinc-200">${t('err_open')}</p>
     <p class="mt-1 text-sm text-zinc-500">${esc(err.message)}</p>
-    <a href="#/" class="btn-primary mt-6">${icon('home')} Voltar ao início</a></div></div>`;
+    <a href="#/" class="btn-primary mt-6">${icon('home')} ${t('back_home')}</a></div></div>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -821,17 +971,17 @@ function openPlayer(i, { autoplay = true } = {}) {
     </${tag}>
     <div id="perr"></div>
     <div class="mt-3 flex flex-wrap items-center gap-2">
-      <button class="btn" data-action="prev" ${i === 0 ? 'disabled' : ''}>${icon('prev', 'w-3.5 h-3.5')} Anterior</button>
-      <button class="btn" data-action="next" ${i === d.media.length - 1 ? 'disabled' : ''}>Próxima ${icon('next', 'w-3.5 h-3.5')}</button>
-      <select class="btn pr-1 cursor-pointer" data-action="rate" title="Velocidade">
+      <button class="btn" data-action="prev" ${i === 0 ? 'disabled' : ''}>${icon('prev', 'w-3.5 h-3.5')} ${t('prev')}</button>
+      <button class="btn" data-action="next" ${i === d.media.length - 1 ? 'disabled' : ''}>${t('next')} ${icon('next', 'w-3.5 h-3.5')}</button>
+      <select class="btn pr-1 cursor-pointer" data-action="rate" title="${t('speed')}">
         ${[0.75, 1, 1.25, 1.5, 1.75, 2].map(r => `<option value="${r}" ${r === prefs.rate ? 'selected' : ''}>${r}x</option>`).join('')}
       </select>
       ${!audio && document.pictureInPictureEnabled ? `<button class="btn" data-action="pip" title="Picture-in-Picture">${icon('pip', 'w-3.5 h-3.5')} PiP</button>` : ''}
-      ${!audio ? `<button class="btn" data-action="fullscreen" title="Tela cheia">${icon('expand', 'w-3.5 h-3.5')} Tela cheia</button>` : ''}
+      ${!audio ? `<button class="btn" data-action="fullscreen" title="${t('fullscreen')}">${icon('expand', 'w-3.5 h-3.5')} ${t('fullscreen')}</button>` : ''}
       <span class="flex-1"></span>
-      <a class="btn" href="${fileUrl(m.path)}" target="_blank" rel="noopener">${icon('external', 'w-3.5 h-3.5')} Nova aba</a>
-      <a class="btn" href="${fileUrl(m.path, 1)}">${icon('download', 'w-3.5 h-3.5')} Baixar</a>
-      <button class="btn" data-action="close-player">${icon('x', 'w-3.5 h-3.5')} Fechar</button>
+      <a class="btn" href="${fileUrl(m.path)}" target="_blank" rel="noopener">${icon('external', 'w-3.5 h-3.5')} ${t('new_tab')}</a>
+      <a class="btn" href="${fileUrl(m.path, 1)}">${icon('download', 'w-3.5 h-3.5')} ${t('download')}</a>
+      <button class="btn" data-action="close-player">${icon('x', 'w-3.5 h-3.5')} ${t('close')}</button>
     </div>`;
   row.appendChild(wrap);
 
@@ -840,7 +990,7 @@ function openPlayer(i, { autoplay = true } = {}) {
   v.addEventListener('loadedmetadata', () => {
     v.playbackRate = prefs.rate;
     const pos = positions[m.path];
-    if (pos > 5 && pos < v.duration - 10) { v.currentTime = pos; toast(`Retomando de ${fmtTime(pos)}`); }
+    if (pos > 5 && pos < v.duration - 10) { v.currentTime = pos; toast(t('resuming', { t: fmtTime(pos) })); }
   });
   v.addEventListener('timeupdate', () => {
     const now = Date.now();
@@ -860,8 +1010,8 @@ function openPlayer(i, { autoplay = true } = {}) {
   v.addEventListener('error', () => {
     if (!v.getAttribute('src')) return;
     $('#perr', wrap).innerHTML = `<div class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-      O navegador não conseguiu reproduzir este arquivo (codec/contêiner não suportado — comum em .mkv com HEVC/AC3).
-      <a class="underline" href="${fileUrl(m.path, 1)}">Baixe</a> e abra no VLC/mpv.</div>`;
+      ${t('cant_play')}
+      <a class="underline" href="${fileUrl(m.path, 1)}">${t('cant_play_dl')}</a> ${t('cant_play_tail')}</div>`;
   });
   v.src = fileUrl(m.path);
   if (autoplay) v.play().catch(() => {});
@@ -927,11 +1077,11 @@ function closeModal() {
   S.picker = null;
 }
 const modalLinks = f => `
-  <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="Abrir em nova aba">${icon('external')}</a>
-  <a class="ibtn" href="${fileUrl(f.path, 1)}" title="Baixar">${icon('download')}</a>`;
+  <a class="ibtn" href="${fileUrl(f.path)}" target="_blank" rel="noopener" title="${t('open_tab')}">${icon('external')}</a>
+  <a class="ibtn" href="${fileUrl(f.path, 1)}" title="${t('download')}">${icon('download')}</a>`;
 
 async function previewFile(f) {
-  const sub = f.path.split('/').slice(0, -1).join(' / ') || 'Início';
+  const sub = f.path.split('/').slice(0, -1).join(' / ') || t('home');
   if (f.kind === 'video' || f.kind === 'audio') { go(dirOf(f.path), { play: f.name }); return; }
   if (f.kind === 'image') {
     return openModal({ title: f.name, sub, actions: modalLinks(f), body:
@@ -941,25 +1091,25 @@ async function previewFile(f) {
     return openModal({ title: f.name, sub, size: 'full', actions: modalLinks(f),
       body: `<iframe src="${fileUrl(f.path)}" title="${esc(f.name)}" class="h-full w-full border-0 bg-ink-950"></iframe>` });
   }
-  if (!f.text) { location.href = fileUrl(f.path, 1); toast('Baixando arquivo…'); return; }
+  if (!f.text) { location.href = fileUrl(f.path, 1); toast(t('downloading')); return; }
 
-  openModal({ title: f.name, sub, actions: `<button class="ibtn" data-action="copy" title="Copiar conteúdo">${icon('copy')}</button>` + modalLinks(f),
-    body: '<div class="p-6 text-sm text-zinc-500 animate-pulse">Carregando…</div>' });
+  openModal({ title: f.name, sub, actions: `<button class="ibtn" data-action="copy" title="${t('copy_content')}">${icon('copy')}</button>` + modalLinks(f),
+    body: `<div class="p-6 text-sm text-zinc-500 animate-pulse">${t('loading')}</div>` });
   try {
-    const t = await api(`/api/text?path=${enc(f.path)}`);
+    const doc = await api(`/api/text?path=${enc(f.path)}`);
     if ($('#modal-title').textContent !== f.name) return;
-    S.modalText = t.content;
-    const warn = t.truncated ? `<div class="border-b border-amber-500/20 bg-amber-500/10 px-5 py-2 text-xs text-amber-200">Exibindo os primeiros 2 MB de ${fmtSize(t.size)}. Baixe para ver o arquivo completo.</div>` : '';
+    S.modalText = doc.content;
+    const warn = doc.truncated ? `<div class="border-b border-amber-500/20 bg-amber-500/10 px-5 py-2 text-xs text-amber-200">${t('truncated', { size: fmtSize(doc.size) })}</div>` : '';
     const lang = langFor(f.name);
     const body = $('#modal-body');
     if (lang === 'markdown' && window.marked && window.DOMPurify) {
-      body.innerHTML = warn + `<div class="flex justify-end px-5 pt-3"><button class="btn" data-action="md-toggle">${icon('code', 'w-3.5 h-3.5')} Ver código</button></div>
-        <article id="md-view" class="prose prose-invert prose-zinc prose-sm sm:prose-base max-w-none px-6 pb-10 pt-1 prose-a:text-accent-soft prose-headings:text-zinc-100">${DOMPurify.sanitize(marked.parse(t.content))}</article>
-        <div id="md-raw" class="hidden">${codeBlock(t.content, 'markdown')}</div>`;
+      body.innerHTML = warn + `<div class="flex justify-end px-5 pt-3"><button class="btn" data-action="md-toggle">${icon('code', 'w-3.5 h-3.5')} ${t('view_code')}</button></div>
+        <article id="md-view" class="prose prose-invert prose-zinc prose-sm sm:prose-base max-w-none px-6 pb-10 pt-1 prose-a:text-accent-soft prose-headings:text-zinc-100">${DOMPurify.sanitize(marked.parse(doc.content))}</article>
+        <div id="md-raw" class="hidden">${codeBlock(doc.content, 'markdown')}</div>`;
       fixRelativeLinks($('#md-view'), dirOf(f.path));
       $$('#md-view pre code').forEach(el => window.hljs && hljs.highlightElement(el));
     } else {
-      body.innerHTML = warn + codeBlock(t.content, lang);
+      body.innerHTML = warn + codeBlock(doc.content, lang);
     }
     $$('code[data-hl]', body).forEach(el => { if (window.hljs && el.textContent.length < 400000) hljs.highlightElement(el); });
   } catch (e) {
@@ -997,40 +1147,40 @@ function openCoverEditor() {
   if (!d || !d.path) return;
   const pos = d.conf.banner_pos ?? 50;
   const external = d.conf.banner && !d.conf.banner.startsWith('/api/') ? d.conf.banner : '';
-  openModal({ title: 'Editar capa', sub: d.title, body: `
+  openModal({ title: t('edit_cover'), sub: d.title, body: `
     <div class="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div>
         <div id="ce-preview" class="relative aspect-[16/8] overflow-hidden rounded-xl border border-ink-700"></div>
         <div class="mt-5">
           <div class="mb-2 flex items-center justify-between text-xs text-zinc-400">
-            <span>Enquadramento vertical</span><span id="ce-pos-label" class="tabular-nums text-zinc-500"></span>
+            <span>${t('ce_pos')}</span><span id="ce-pos-label" class="tabular-nums text-zinc-500"></span>
           </div>
           <input id="ce-pos" type="range" min="0" max="100" step="1" value="${pos}" data-action="cover-pos" class="w-full accent-[#8b7cf6]">
           <div class="mt-2 flex gap-2">
-            ${[['Topo', 0], ['Centro', 50], ['Base', 100]].map(([l, v]) => `<button class="btn" data-action="cover-pos-preset" data-pos="${v}">${l}</button>`).join('')}
+            ${[[t('ce_top'), 0], [t('ce_center'), 50], [t('ce_bottom'), 100]].map(([l, v]) => `<button class="btn" data-action="cover-pos-preset" data-pos="${v}">${l}</button>`).join('')}
           </div>
         </div>
       </div>
       <div class="flex flex-col gap-5">
         <label id="ce-drop" class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-ink-600 px-4 py-6 text-center text-xs text-zinc-400 hover:border-accent/60 transition">
           <span class="grid place-items-center w-10 h-10 rounded-full bg-ink-800 text-zinc-300">${icon('upload', 'w-5 h-5')}</span>
-          <span><b class="font-medium text-zinc-200">Escolher imagem</b>, arrastar aqui<br>ou colar com Ctrl+V</span>
-          <span class="text-[11px] text-zinc-500">JPG, PNG, WebP, GIF ou AVIF · até 15 MB</span>
+          <span><b class="font-medium text-zinc-200">${t('ce_choose')}</b>${t('ce_drag')}</span>
+          <span class="text-[11px] text-zinc-500">${t('ce_types')}</span>
           <input id="ce-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" data-action="cover-file" class="hidden">
         </label>
         <div>
-          <div class="mb-2 flex items-center gap-1.5 text-xs text-zinc-400">${icon('link', 'w-3.5 h-3.5')} Ou usar uma URL</div>
+          <div class="mb-2 flex items-center gap-1.5 text-xs text-zinc-400">${icon('link', 'w-3.5 h-3.5')} ${t('ce_or_url')}</div>
           <div class="flex gap-2">
             <input id="ce-url" type="url" placeholder="https://…" value="${esc(external)}" spellcheck="false"
                    class="min-w-0 flex-1 h-8 px-2.5 rounded-md bg-ink-850 border border-ink-700 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-accent/60">
-            <button class="btn" data-action="cover-url">Usar</button>
+            <button class="btn" data-action="cover-url">${t('ce_use')}</button>
           </div>
         </div>
-        <button class="btn w-max text-red-300 hover:text-red-200" data-action="cover-remove" ${d.conf.banner ? '' : 'disabled'}>${icon('trash', 'w-3.5 h-3.5')} Remover capa</button>
+        <button class="btn w-max text-red-300 hover:text-red-200" data-action="cover-remove" ${d.conf.banner ? '' : 'disabled'}>${icon('trash', 'w-3.5 h-3.5')} ${t('ce_remove')}</button>
         <p id="ce-status" class="min-h-[1rem] text-xs text-accent-soft"></p>
         <div class="mt-auto flex justify-end gap-2">
-          <button class="btn" data-action="close-modal">Cancelar</button>
-          <button class="btn-primary" data-action="cover-save" disabled>Salvar</button>
+          <button class="btn" data-action="close-modal">${t('cancel')}</button>
+          <button class="btn-primary" data-action="cover-save" disabled>${t('save')}</button>
         </div>
       </div>
     </div>` });
@@ -1044,9 +1194,9 @@ function paintCoverEditor({ preview = true } = {}) {
   if (preview) $('#ce-preview').innerHTML = cover({ title: ce.title, conf: { ...ce.conf, banner: ce.src, banner_pos: ce.pos } });
   else $('#ce-preview img')?.setAttribute('style', bannerPos({ banner_pos: ce.pos }));
   $('#ce-pos-label').textContent = `${ce.pos}%`;
-  $('#ce-status').textContent = ce.file ? `Nova imagem: ${ce.file.name || 'colada'} (${fmtSize(ce.file.size)})`
-    : ce.url ? 'Nova capa a partir da URL'
-    : ce.remove ? 'A capa será removida (o arquivo vira .bak na pasta)' : '';
+  $('#ce-status').textContent = ce.file ? t('ce_new_img', { name: ce.file.name || t('ce_pasted'), size: fmtSize(ce.file.size) })
+    : ce.url ? t('ce_new_url')
+    : ce.remove ? t('ce_will_remove') : '';
   const dirty = !!(ce.file || ce.url || ce.remove) || ce.pos !== ce.pos0;
   $('[data-action="cover-save"]').disabled = !dirty || ce.busy;
 }
@@ -1054,8 +1204,8 @@ function paintCoverEditor({ preview = true } = {}) {
 function setCoverFile(f) {
   const ce = S.coverEdit;
   if (!ce || !f) return;
-  if (!COVER_TYPES.test(f.type)) { toast('Use uma imagem JPG, PNG, WebP, GIF ou AVIF'); return; }
-  if (f.size > 15 * 1024 * 1024) { toast('Imagem maior que 15 MB'); return; }
+  if (!COVER_TYPES.test(f.type)) { toast(t('ce_bad_type')); return; }
+  if (f.size > 15 * 1024 * 1024) { toast(t('ce_too_big')); return; }
   if (ce.blob) URL.revokeObjectURL(ce.blob);
   ce.blob = URL.createObjectURL(f);
   Object.assign(ce, { file: f, url: null, remove: false, src: ce.blob });
@@ -1065,7 +1215,7 @@ function setCoverFile(f) {
 function setCoverUrl() {
   const ce = S.coverEdit, url = $('#ce-url').value.trim();
   if (!ce) return;
-  if (!/^https?:\/\/[^\s"'<>]+$/i.test(url)) { toast('Informe uma URL começando com http:// ou https://'); return; }
+  if (!/^https?:\/\/[^\s"'<>]+$/i.test(url)) { toast(t('ce_bad_url')); return; }
   Object.assign(ce, { url, file: null, remove: false, src: url });
   paintCoverEditor();
 }
@@ -1081,10 +1231,10 @@ async function saveCover() {
     else if (ce.url) await patch({ banner: ce.url });
     else if (ce.remove) await api('/api/banner' + q, { method: 'DELETE' });
     if (!ce.remove && ce.pos !== ce.pos0) await patch({ banner_pos: ce.pos });
-    toast(ce.remove ? 'Capa removida' : 'Capa atualizada');
+    toast(t(ce.remove ? 'ce_removed' : 'ce_updated'));
     route({ force: true });
   } catch (e) {
-    toast('Falha ao salvar: ' + e.message);
+    toast(t('save_failed', { msg: e.message }));
     if (S.coverEdit === ce) { ce.busy = false; paintCoverEditor({ preview: false }); }
   }
 }
@@ -1113,7 +1263,7 @@ function toggleMenu(btn) {
   closeMenu();
   S.menuPath = btn.dataset.menu;
   btn.classList.add('is-open');
-  m.innerHTML = [['item-rename', 'pencil', 'Renomear'], ['item-move', 'move', 'Mover para…'], ['item-trash', 'trash', 'Excluir']]
+  m.innerHTML = [['item-rename', 'pencil', t('rename')], ['item-move', 'move', t('move_to')], ['item-trash', 'trash', t('delete')]]
     .map(([a, ic, label]) => `<button role="menuitem" data-action="${a}" class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition
       ${a === 'item-trash' ? 'text-red-300 hover:bg-red-500/10' : 'text-zinc-200 hover:bg-ink-700'}">${icon(ic, 'w-4 h-4')}${label}</button>`).join('');
   m.classList.remove('hidden');
@@ -1147,9 +1297,9 @@ function paintSel() {
   bar.classList.toggle('hidden', !S.selecting);
   bar.classList.toggle('flex', S.selecting);
   if (!S.selecting) return;
-  $('#sel-count').textContent = n ? plural(n, 'selecionado', 'selecionados') : 'Clique nos itens para selecionar';
-  $('[data-action="sel-move"]', bar).innerHTML = `${icon('move', 'w-3.5 h-3.5')} Mover para…`;
-  $('[data-action="sel-trash"]', bar).innerHTML = `${icon('trash', 'w-3.5 h-3.5')} Excluir`;
+  $('#sel-count').textContent = n ? pl(n, 'u_selected') : t('sel_hint');
+  $('[data-action="sel-move"]', bar).innerHTML = `${icon('move', 'w-3.5 h-3.5')} ${t('move_to')}`;
+  $('[data-action="sel-trash"]', bar).innerHTML = `${icon('trash', 'w-3.5 h-3.5')} ${t('delete')}`;
   $$('[data-needs-sel]', bar).forEach(b => { b.disabled = !n; });
 }
 
@@ -1168,7 +1318,7 @@ function openForm({ title, sub = '', inner, confirm, danger = false, onSubmit })
     ${inner}
     <p id="fs-err" class="min-h-[1rem] text-xs text-red-300"></p>
     <div class="flex justify-end gap-2">
-      <button type="button" class="btn" data-action="close-modal">Cancelar</button>
+      <button type="button" class="btn" data-action="close-modal">${t('cancel')}</button>
       <button type="submit" class="btn-primary ${danger ? '!bg-red-600 hover:!bg-red-700 !shadow-red-900/30' : ''}">${confirm}</button>
     </div></form>` });
   S.formSubmit = onSubmit;
@@ -1178,10 +1328,10 @@ const nameInput = value => `<input id="fs-name" value="${esc(value)}" spellcheck
 
 function fsNewFolder(parent, parentTitle, after) {
   openForm({
-    title: 'Nova pasta', sub: `Em ${parentTitle}`, confirm: 'Criar', inner: nameInput(''),
+    title: t('new_folder'), sub: t('in_x', { t: parentTitle }), confirm: t('create'), inner: nameInput(''),
     onSubmit: async () => {
       const r = await postJSON('/api/fs/mkdir', { parent, name: $('#fs-name').value });
-      toast('Pasta criada');
+      toast(t('folder_created'));
       (after || (() => route({ force: true })))(r.path);
     },
   });
@@ -1191,17 +1341,17 @@ function fsNewFolder(parent, parentTitle, after) {
 function fsRename(it) {
   const isDir = it.kind === 'dir';
   const hint = isDir && it.conf && it.conf.title
-    ? `O nome exibido (“${it.conf.title}”) vem do course.conf e não muda.`
-    : it.kind === 'video' || it.kind === 'audio' ? 'Legendas com o mesmo nome são renomeadas junto.' : '';
+    ? t('rename_hint_conf', { t: it.conf.title })
+    : it.kind === 'video' || it.kind === 'audio' ? t('rename_hint_subs') : '';
   openForm({
-    title: isDir ? 'Renomear pasta' : 'Renomear arquivo', sub: it.path, confirm: 'Renomear',
+    title: t(isDir ? 'rename_folder' : 'rename_file'), sub: it.path, confirm: t('rename'),
     inner: nameInput(it.name) + (hint ? `<p class="-mt-2 text-xs text-zinc-500">${esc(hint)}</p>` : ''),
     onSubmit: async () => {
       const name = $('#fs-name').value.trim();
       if (name === it.name) { closeModal(); return; }
       closePlayer({ updateHash: true });
       const r = await postJSON('/api/fs/rename', { path: it.path, name });
-      toast('Renomeado');
+      toast(t('renamed'));
       afterMove(r.moved);
     },
   });
@@ -1213,19 +1363,19 @@ function fsRename(it) {
 function fsTrash(paths) {
   const names = paths.map(baseName);
   openForm({
-    title: 'Excluir', sub: paths.length === 1 ? paths[0] : plural(paths.length, 'item', 'itens'),
-    confirm: 'Mover para a lixeira', danger: true,
-    inner: `<p class="text-sm text-zinc-300">Mover ${paths.length === 1 ? 'este item' : `estes ${paths.length} itens`} para a lixeira?</p>
+    title: t('delete'), sub: paths.length === 1 ? paths[0] : pl(paths.length, 'u_item'),
+    confirm: t('trash_confirm'), danger: true,
+    inner: `<p class="text-sm text-zinc-300">${paths.length === 1 ? t('trash_q_one') : t('trash_q_many', { n: paths.length })}</p>
       <ul class="space-y-1 rounded-lg border border-ink-700 bg-ink-850 px-3 py-2 text-xs text-zinc-400">
         ${names.slice(0, 5).map(n => `<li class="truncate">${esc(n)}</li>`).join('')}${names.length > 5 ? `<li>+${names.length - 5}</li>` : ''}</ul>
-      <p class="text-xs text-zinc-500">Nada é apagado: vai para a pasta <code class="text-zinc-300">.lixeira</code> na raiz dos cursos, mantendo o caminho original.</p>`,
+      <p class="text-xs text-zinc-500">${t('trash_note')}</p>`,
     onSubmit: async () => {
       closePlayer({ updateHash: true });
       let r;
       try { r = await postJSON('/api/fs/trash', { paths }); }
       catch (e) { if (e.data && e.data.trashed && e.data.trashed.length) route({ force: true }); throw e; }
       if (S.selecting) setSelecting(false);
-      toast(`Movido para a lixeira (${r.folder})`);
+      toast(t('trashed', { f: r.folder }));
       const cur = S.data ? S.data.path : '';
       const hit = paths.find(p => cur === p || cur.startsWith(p + '/'));
       if (hit) go(dirOf(hit)); else route({ force: true });
@@ -1238,22 +1388,22 @@ function fsMove(paths) {
   const parents = [...new Set(paths.map(dirOf))];
   S.picker = { paths, cwd: parents.length === 1 ? parents[0] : '', title: '', seq: 0, busy: false };
   openModal({
-    title: paths.length === 1 ? `Mover “${baseName(paths[0])}”` : `Mover ${paths.length} itens`,
-    sub: 'Escolha a pasta de destino', size: 'md', body: `
+    title: paths.length === 1 ? t('move_one', { n: baseName(paths[0]) }) : t('move_many', { n: paths.length }),
+    sub: t('pick_dest'), size: 'md', body: `
     <div class="flex h-[62vh] flex-col">
       <div class="flex gap-2 border-b border-ink-700 p-3">
         <div class="relative flex-1">
           <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500">${icon('search', 'w-3.5 h-3.5')}</span>
-          <input id="pk-q" type="search" placeholder="Buscar pasta em toda a biblioteca…" spellcheck="false"
+          <input id="pk-q" type="search" placeholder="${t('pk_search')}" spellcheck="false"
                  class="w-full h-8 pl-8 pr-2 rounded-md bg-ink-850 border border-ink-700 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-accent/60">
         </div>
-        <button class="btn" data-action="pk-mkdir">${icon('folderPlus', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Nova pasta aqui</span></button>
+        <button class="btn" data-action="pk-mkdir">${icon('folderPlus', 'w-3.5 h-3.5')}<span class="hidden sm:inline">${t('pk_newhere')}</span></button>
       </div>
       <nav id="pk-crumbs" class="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap px-4 py-2 text-xs text-zinc-500"></nav>
       <div id="pk-list" class="flex-1 overflow-auto px-2 pb-2"></div>
       <div class="flex flex-wrap items-center justify-end gap-2 border-t border-ink-700 p-3">
         <p id="pk-msg" class="mr-auto text-xs text-zinc-500"></p>
-        <button class="btn" data-action="close-modal">Cancelar</button>
+        <button class="btn" data-action="close-modal">${t('cancel')}</button>
         <button class="btn-primary max-w-[60%]" data-action="pk-confirm"></button>
       </div>
     </div>` });
@@ -1267,12 +1417,12 @@ async function loadPicker(cwd) {
   pk.cwd = cwd;
   $('#pk-q').value = '';
   try {
-    const t = await api(`/api/tree?path=${enc(cwd)}`);
+    const tree = await api(`/api/tree?path=${enc(cwd)}`);
     if (S.picker !== pk || seq !== pk.seq) return;
-    pk.title = t.title;
-    $('#pk-crumbs').innerHTML = t.breadcrumbs.map((c, i) =>
-      `${i ? `<span class="text-zinc-700">${icon('chevron', 'w-3 h-3')}</span>` : ''}<button class="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-800 hover:text-zinc-200 ${i === t.breadcrumbs.length - 1 ? 'text-zinc-200' : ''}" data-action="pk-go" data-path="${esc(c.path)}">${i ? '' : icon('home', 'w-3.5 h-3.5')}${esc(c.title)}</button>`).join('');
-    renderPickerList(t.dirs, 'Sem subpastas aqui.');
+    pk.title = tree.title;
+    $('#pk-crumbs').innerHTML = tree.breadcrumbs.map((c, i) =>
+      `${i ? `<span class="text-zinc-700">${icon('chevron', 'w-3 h-3')}</span>` : ''}<button class="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-800 hover:text-zinc-200 ${i === tree.breadcrumbs.length - 1 ? 'text-zinc-200' : ''}" data-action="pk-go" data-path="${esc(c.path)}">${i ? '' : icon('home', 'w-3.5 h-3.5')}${esc(c.title)}</button>`).join('');
+    renderPickerList(tree.dirs, t('pk_nosub'));
   } catch (e) {
     if (S.picker === pk) $('#pk-list').innerHTML = `<p class="p-6 text-sm text-red-300">${esc(e.message)}</p>`;
   }
@@ -1301,8 +1451,8 @@ function paintPicker() {
   const btn = $('[data-action="pk-confirm"]');
   btn.disabled = inside || same || pk.busy;
   $('#pk-msg').className = 'mr-auto text-xs text-zinc-500';
-  btn.innerHTML = `${icon('move', 'w-4 h-4')}<span class="truncate">Mover para “${esc(pk.title || 'Início')}”</span>`;
-  $('#pk-msg').textContent = inside ? 'Não dá para mover uma pasta para dentro dela mesma.' : same ? 'Os itens já estão nesta pasta.' : '';
+  btn.innerHTML = `${icon('move', 'w-4 h-4')}<span class="truncate">${esc(t('move_to_x', { t: pk.title || t('home') }))}</span>`;
+  $('#pk-msg').textContent = inside ? t('pk_inside') : same ? t('pk_same') : '';
 }
 
 let pickerTimer;
@@ -1316,8 +1466,8 @@ function onPickerSearch() {
       const r = await api(`/api/search?q=${enc(q)}`);
       if (S.picker !== pk || seq !== pk.seq) return;
       renderPickerList(r.results.filter(x => x.type === 'dir')
-        .map(x => ({ ...x, where: x.parent ? x.parent.split('/').join(' › ') : 'Início' })), 'Nenhuma pasta encontrada.');
-    } catch (e) { toast('Erro na busca: ' + e.message); }
+        .map(x => ({ ...x, where: x.parent ? x.parent.split('/').join(' › ') : t('home') })), t('pk_none'));
+    } catch (e) { toast(t('search_err', { msg: e.message })); }
   }, 150);
 }
 
@@ -1328,7 +1478,7 @@ async function pickerConfirm() {
   closePlayer({ updateHash: true });
   try {
     const r = await postJSON('/api/fs/move', { paths: pk.paths, dest: pk.cwd });
-    toast(`Movido para “${pk.title || 'Início'}”`);
+    toast(t('moved_to', { t: pk.title || t('home') }));
     afterMove(r.moved);
   } catch (e) {
     if (e.data && e.data.moved && e.data.moved.length) { toast(e.message); afterMove(e.data.moved); return; }
@@ -1339,9 +1489,9 @@ async function pickerConfirm() {
 function pickerNewFolder() {
   if ($('#pk-new')) { $('#pk-new-name').focus(); return; }
   $('#pk-list').insertAdjacentHTML('afterbegin', `<form id="pk-new" class="flex gap-2 p-2" autocomplete="off">
-    <input id="pk-new-name" placeholder="Nome da nova pasta" spellcheck="false" maxlength="255"
+    <input id="pk-new-name" placeholder="${t('pk_newname')}" spellcheck="false" maxlength="255"
            class="min-w-0 flex-1 h-8 px-2.5 rounded-md bg-ink-850 border border-accent/50 text-xs text-zinc-100 outline-none">
-    <button class="btn" type="submit">Criar</button></form>`);
+    <button class="btn" type="submit">${t('create')}</button></form>`);
   $('#pk-new-name').focus();
 }
 
@@ -1365,7 +1515,7 @@ async function runSearch() {
     if (seq !== S.searchSeq || !S.query) return;
     S.results = r.results;
     renderSearch(r);
-  } catch (e) { toast('Erro na busca: ' + e.message); }
+  } catch (e) { toast(t('search_err', { msg: e.message })); }
 }
 function hideSearch() {
   $('#search-view').classList.add('hidden');
@@ -1378,25 +1528,25 @@ function clearSearch() {
 }
 function renderSearch(r) {
   const groups = [
-    ['Pastas', 'folder', x => x.type === 'dir'],
-    ['Aulas', 'film', x => x.type === 'video' || x.type === 'audio'],
-    ['Materiais', 'book', x => x.type === 'doc'],
-    ['Imagens', 'image', x => x.type === 'image'],
-    ['Outros', 'box', x => x.type === 'other'],
+    [t('g_folders'), 'folder', x => x.type === 'dir'],
+    [t('g_lessons'), 'film', x => x.type === 'video' || x.type === 'audio'],
+    [t('g_materials'), 'book', x => x.type === 'doc'],
+    [t('g_images'), 'image', x => x.type === 'image'],
+    [t('g_others'), 'box', x => x.type === 'other'],
   ];
   const q = S.query;
   let html = `<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
-    <div><p class="text-[11px] font-semibold uppercase tracking-[.2em] text-zinc-500">Busca</p>
-      <h1 class="mt-1 text-2xl font-semibold text-zinc-100">“${esc(q)}” <span class="text-base font-normal text-zinc-500">${r.results.length}${r.results.length >= r.limit ? '+' : ''} resultado(s)</span></h1></div>
+    <div><p class="text-[11px] font-semibold uppercase tracking-[.2em] text-zinc-500">${t('search')}</p>
+      <h1 class="mt-1 text-2xl font-semibold text-zinc-100">“${esc(q)}” <span class="text-base font-normal text-zinc-500">${t('results', { n: r.results.length + (r.results.length >= r.limit ? '+' : '') })}</span></h1></div>
     ${S.path ? `<label class="inline-flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
-      <input type="checkbox" data-action="scope" class="accent-[#8b7cf6]" ${S.scopeLocal ? 'checked' : ''}> Somente em <b class="font-medium text-zinc-200">${esc(S.data ? S.data.title : S.path)}</b></label>` : ''}
+      <input type="checkbox" data-action="scope" class="accent-[#8b7cf6]" ${S.scopeLocal ? 'checked' : ''}> ${t('only_in')} <b class="font-medium text-zinc-200">${esc(S.data ? S.data.title : S.path)}</b></label>` : ''}
   </div>`;
-  if (!r.results.length) html += empty('Nada encontrado. Tente outro termo ou uma tag.');
+  if (!r.results.length) html += empty(t('nothing_found'));
   for (const [label, ic, fn] of groups) {
     const items = r.results.map((x, i) => [x, i]).filter(([x]) => fn(x));
     if (!items.length) continue;
     html += section(ic, label, items.length, `<div class="rounded-xl border border-ink-700 bg-ink-850 p-1.5">${items.map(([x, i]) => {
-      const where = x.parent ? x.parent.split('/').join(' › ') : 'Início';
+      const where = x.parent ? x.parent.split('/').join(' › ') : t('home');
       const ext = extOf(x.name).slice(1);
       return `<button class="result" data-action="result" data-i="${i}">
         <span class="ficon grid place-items-center w-8 h-8 rounded-md shrink-0" style="--h:${hue(x.type === 'dir' ? x.title : ext)}">${icon(x.type === 'dir' ? 'folder' : fileIcon({ ...x, kind: x.type }), 'w-4 h-4')}</span>
@@ -1433,25 +1583,25 @@ async function handleAction(el) {
       const all = d.media.every(m => watched[m.path]);
       d.media.forEach(m => { if (all) delete watched[m.path]; else watched[m.path] = Date.now(); });
       store.set('watched', watched); refreshProgressUI();
-      toast(all ? 'Aulas desmarcadas' : 'Todas as aulas marcadas como assistidas');
+      toast(t(all ? 'unmarked' : 'all_marked'));
       break;
     }
     case 'continue': { const k = d.media.findIndex(m => !watched[m.path]); openPlayer(k === -1 ? 0 : k); break; }
     case 'prev': if (S.playing > 0) openPlayer(S.playing - 1); break;
     case 'next': if (S.playing < d.media.length - 1) openPlayer(S.playing + 1); break;
-    case 'pip': v && v.requestPictureInPicture().catch(e => toast('PiP indisponível: ' + e.message)); break;
+    case 'pip': v && v.requestPictureInPicture().catch(e => toast(t('pip_unavail', { msg: e.message }))); break;
     case 'fullscreen': v && (v.requestFullscreen ? v.requestFullscreen() : v.webkitEnterFullscreen?.()); break;
     case 'close-player': closePlayer({ updateHash: true }); break;
     case 'preview': previewFile(d[el.dataset.list][i]); break;
     case 'result': openResult(S.results[i]); break;
     case 'close-modal': closeModal(); break;
     case 'copy':
-      try { await navigator.clipboard.writeText(S.modalText); toast('Conteúdo copiado'); } catch { toast('Não foi possível copiar'); }
+      try { await navigator.clipboard.writeText(S.modalText); toast(t('copied')); } catch { toast(t('copy_failed')); }
       break;
     case 'md-toggle': {
       const raw = $('#md-raw').classList.toggle('hidden');
       $('#md-view').classList.toggle('hidden', !raw);
-      el.innerHTML = raw ? `${icon('code', 'w-3.5 h-3.5')} Ver código` : `${icon('eye', 'w-3.5 h-3.5')} Ver renderizado`;
+      el.innerHTML = raw ? `${icon('code', 'w-3.5 h-3.5')} ${t('view_code')}` : `${icon('eye', 'w-3.5 h-3.5')} ${t('view_rendered')}`;
       break;
     }
     case 'clear-tags':
@@ -1483,12 +1633,13 @@ async function handleAction(el) {
     case 'pk-go': loadPicker(el.dataset.path); break;
     case 'pk-mkdir': pickerNewFolder(); break;
     case 'pk-confirm': pickerConfirm(); break;
+    case 'lang': setLang(LANG === 'pt' ? 'en' : 'pt'); break;
     case 'refresh':
       try {
         const r = await api('/api/refresh', { method: 'POST' });
-        toast(`Índice atualizado · ${r.folders} pastas, ${r.entries} itens`);
+        toast(t('reindexed', { f: r.folders, e: r.entries }));
         route({ force: true });
-      } catch (e) { toast('Falha ao reindexar: ' + e.message); }
+      } catch (e) { toast(t('reindex_failed', { msg: e.message })); }
       break;
   }
 }
@@ -1533,7 +1684,7 @@ document.addEventListener('submit', async e => {
     if (!pk) return;
     try {
       const r = await postJSON('/api/fs/mkdir', { parent: pk.cwd, name: $('#pk-new-name').value });
-      toast('Pasta criada');
+      toast(t('folder_created'));
       loadPicker(r.path);
     } catch (err) { $('#pk-msg').textContent = err.message; $('#pk-msg').className = 'mr-auto text-xs text-red-300'; }
     return;
@@ -1562,7 +1713,7 @@ document.addEventListener('drop', e => {
   e.preventDefault();
   $('#ce-drop')?.classList.remove('is-over');
   const f = e.dataTransfer?.files?.[0];
-  if (f) setCoverFile(f); else toast('Solte um arquivo de imagem do computador');
+  if (f) setCoverFile(f); else toast(t('ce_drop_file'));
 });
 document.addEventListener('paste', e => {
   if (!S.coverEdit) return;
@@ -1607,6 +1758,7 @@ window.addEventListener('pagehide', () => closePlayer());
 
 document.addEventListener('DOMContentLoaded', () => {
   $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
+  applyStatic();
   route();
 });
 </script>
